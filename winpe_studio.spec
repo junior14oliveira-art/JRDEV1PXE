@@ -26,6 +26,10 @@ datas = [
     # Pacotes de drivers corporativos
     (str(ROOT / 'app' / 'resources' / 'drivers'),
      'app/resources/drivers'),
+
+    # Ferramentas embutidas (7-Zip + oscdimg) — sem dependencia externa
+    (str(ROOT / 'app' / 'resources' / 'tools'),
+     'app/resources/tools'),
 ]
 
 # ── Imports ocultos necessários ───────────────────────────────────────────────

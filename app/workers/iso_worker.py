@@ -53,9 +53,23 @@ _7ZIP_CANDIDATES = [
 
 
 def _find_7zip() -> str | None:
+    """Localiza 7z.exe — primeiro embutido no programa, depois no sistema."""
+    import sys as _sys
+    if getattr(_sys, 'frozen', False):
+        _base = Path(_sys._MEIPASS)
+    else:
+        _base = Path(__file__).parent.parent
+
+    # 1. Embutido em resources/tools/
+    bundled = _base / "app" / "resources" / "tools" / "7z.exe"
+    if bundled.exists():
+        return str(bundled)
+
+    # 2. Instalação padrão do sistema
     for c in _7ZIP_CANDIDATES:
         if Path(c).exists():
             return c
+
     import shutil as sh
     return sh.which("7z")
 

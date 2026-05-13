@@ -1,6 +1,7 @@
 """Verificador de dependências e ambiente do sistema para o WinPE Studio."""
 import subprocess
 import shutil
+import sys
 from pathlib import Path
 from dataclasses import dataclass, field
 from loguru import logger
@@ -16,6 +17,8 @@ class SystemStatus:
     dism_found: bool = False
     oscdimg_path: str = ""
     oscdimg_found: bool = False
+    sevenz_path: str = ""
+    sevenz_found: bool = False
     free_space_gb: float = 0.0
     windows_version: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -24,6 +27,16 @@ class SystemStatus:
     @property
     def ready(self) -> bool:
         return self.dism_found and self.is_admin and self.free_space_gb >= 5.0
+
+
+# ── Localiza pasta de ferramentas embutidas ───────────────────────────────── #
+def _get_tools_dir() -> Path:
+    """Retorna a pasta tools/ — funciona como script e como .exe empacotado."""
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).parent.parent
+    return base / "app" / "resources" / "tools"
 
 
 # Caminhos conhecidos do Windows ADK
@@ -41,6 +54,7 @@ def detect_system() -> SystemStatus:
     """Executa todas as verificações de ambiente e retorna um SystemStatus."""
     import ctypes
     status = SystemStatus()
+    tools_dir = _get_tools_dir()
 
     # Verificar admin
     try:
@@ -59,24 +73,53 @@ def detect_system() -> SystemStatus:
     else:
         status.errors.append("DISM não encontrado. Instale o Windows ADK.")
 
-    # ADK + oscdimg
-    for adk_root in _ADK_ROOTS:
-        if Path(adk_root).exists():
-            status.adk_found = True
-            status.adk_path = adk_root
-            for sub in _OSCDIMG_SUBPATHS:
-                candidate = Path(adk_root) / sub
-                if candidate.exists():
-                    status.oscdimg_found = True
-                    status.oscdimg_path = str(candidate)
-                    logger.info(f"oscdimg encontrado: {candidate}")
-                    break
-            break
+    # ── oscdimg: primeiro nas ferramentas embutidas, depois no ADK ────────── #
+    bundled_oscdimg = tools_dir / "oscdimg.exe"
+    if bundled_oscdimg.exists():
+        status.oscdimg_found = True
+        status.oscdimg_path = str(bundled_oscdimg)
+        status.adk_found = True
+        logger.info(f"oscdimg embutido: {bundled_oscdimg}")
+    else:
+        # Fallback: ADK instalado no sistema
+        for adk_root in _ADK_ROOTS:
+            if Path(adk_root).exists():
+                status.adk_found = True
+                status.adk_path = adk_root
+                for sub in _OSCDIMG_SUBPATHS:
+                    candidate = Path(adk_root) / sub
+                    if candidate.exists():
+                        status.oscdimg_found = True
+                        status.oscdimg_path = str(candidate)
+                        logger.info(f"oscdimg ADK: {candidate}")
+                        break
+                break
 
-    if not status.adk_found:
-        status.warnings.append("Windows ADK não encontrado. oscdimg pode não estar disponível.")
+    if not status.oscdimg_found:
+        status.warnings.append("oscdimg não encontrado — geração de ISO indisponível.")
 
-    # Espaço em disco (unidade C e E)
+    # ── 7-Zip: primeiro embutido, depois sistema ──────────────────────────── #
+    bundled_7z = tools_dir / "7z.exe"
+    if bundled_7z.exists():
+        status.sevenz_found = True
+        status.sevenz_path = str(bundled_7z)
+        logger.info(f"7-Zip embutido: {bundled_7z}")
+    else:
+        for candidate in [
+            r"C:\Program Files\7-Zip\7z.exe",
+            r"C:\Program Files (x86)\7-Zip\7z.exe",
+            shutil.which("7z") or "",
+        ]:
+            if candidate and Path(candidate).exists():
+                status.sevenz_found = True
+                status.sevenz_path = candidate
+                logger.info(f"7-Zip sistema: {candidate}")
+                break
+
+    if not status.sevenz_found:
+        status.warnings.append("7-Zip não encontrado — injeção de drivers indisponível.")
+
+    # Espaço em disco
     status.free_space_gb = get_free_space_gb("E:\\") or get_free_space_gb("C:\\")
     if status.free_space_gb < 5.0:
         status.warnings.append(f"Pouco espaço em disco: {status.free_space_gb} GB livres.")
