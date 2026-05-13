@@ -65,6 +65,20 @@ pause
 exit /b 1
 
 :run
+:: Verificar se PySide6 esta instalado antes de rodar
+"%PYTHON_EXE%" -c "import PySide6" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [AVISO] PySide6 nao encontrado. Instalando dependencias...
+    "%PYTHON_EXE%" -m pip install -r "%~dp0requirements.txt" --quiet --no-warn-script-location
+    if %ERRORLEVEL% neq 0 (
+        echo [ERRO] Falha ao instalar dependencias.
+        echo        Execute SETUP_DEV.bat primeiro.
+        pause & exit /b 1
+    )
+    echo [OK] Dependencias instaladas.
+)
+
 "%PYTHON_EXE%" -m app.main
 
 :check_exit

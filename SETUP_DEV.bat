@@ -1,13 +1,12 @@
 @echo off
 setlocal EnableDelayedExpansion
-title WinPE Studio - SETUP AMBIENTE DE DESENVOLVIMENTO
+title WinPE Studio - SETUP AMBIENTE
 color 0A
 cd /d "%~dp0"
 
 echo ============================================================
 echo   WinPE Studio - SETUP COMPLETO DO AMBIENTE
-echo   Para servidor com NADA instalado
-echo   Instala: Python, pip, dependencias, NSIS, 7-Zip
+echo   Instala: Python 3.13, dependencias, 7-Zip, NSIS, Git
 echo ============================================================
 echo.
 
@@ -18,234 +17,184 @@ if %errorlevel% neq 0 (
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WorkingDirectory '%~dp0'"
     exit /b
 )
-
-echo [OK] Rodando como Administrador.
+echo [OK] Administrador confirmado.
 echo.
 
-:: ── Verificar conexao com internet ───────────────────────────────────
-ping -n 1 8.8.8.8 >nul 2>&1
+:: ── Internet ─────────────────────────────────────────────────────────
+ping -n 1 -w 3000 8.8.8.8 >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [ERRO] Sem conexao com a internet.
-    echo        Este script precisa baixar arquivos.
+    echo [ERRO] Sem conexao com a internet. Necessaria para baixar arquivos.
     pause & exit /b 1
 )
 echo [OK] Internet disponivel.
 echo.
 
-set "ERROS=0"
 set "LOG=%~dp0SETUP_DEV_LOG.txt"
-echo Setup iniciado em %DATE% %TIME% > "%LOG%"
+echo ====== SETUP %DATE% %TIME% ====== > "%LOG%"
 
 :: ════════════════════════════════════════════════════════════════════
-echo [1/6] Verificando/Instalando Python 3.13...
+echo [1/5] Python 3.13...
 :: ════════════════════════════════════════════════════════════════════
-where python >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=2" %%V in ('python --version 2^>^&1') do set "PY_VER=%%V"
-    echo [OK] Python ja instalado: !PY_VER!
-    echo Python ja instalado: !PY_VER! >> "%LOG%"
+set "PYTHON_EXE="
+
+:: Procura Python em locais comuns
+for %%P in (
+    "python"
+    "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+    "C:\Python313\python.exe"
+    "C:\Python312\python.exe"
+    "C:\Program Files\Python313\python.exe"
+) do (
+    if "!PYTHON_EXE!"=="" (
+        where %%~P >nul 2>&1 && set "PYTHON_EXE=%%~P"
+        if "!PYTHON_EXE!"=="" if exist "%%~P" set "PYTHON_EXE=%%~P"
+    )
+)
+
+if not "!PYTHON_EXE!"=="" (
+    for /f "tokens=2" %%V in ('"!PYTHON_EXE!" --version 2^>^&1') do echo [OK] Python ja instalado: %%V
+    echo Python ja instalado >> "%LOG%"
     goto :python_ok
 )
 
-echo [+] Baixando Python 3.13...
-powershell -NoProfile -Command ^
-    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
-     Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe' ^
-     -OutFile '%TEMP%\python_setup.exe' -UseBasicParsing"
+echo [+] Baixando Python 3.13.0...
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe' -OutFile '%TEMP%\python_setup.exe'"
 
 if not exist "%TEMP%\python_setup.exe" (
-    echo [ERRO] Falha ao baixar Python.
-    set /a ERROS+=1
-    goto :python_skip
+    echo [ERRO] Falha ao baixar Python. Instale manualmente: https://www.python.org/downloads/
+    echo        Marque "Add Python to PATH" durante a instalacao.
+    pause & exit /b 1
 )
 
-echo [+] Instalando Python 3.13 (silencioso)...
-"%TEMP%\python_setup.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_doc=0
-timeout /t 10 /nobreak >nul
+echo [+] Instalando Python 3.13...
+"%TEMP%\python_setup.exe" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_doc=0 Include_launcher=1
+timeout /t 15 /nobreak >nul
 
-:: Recarregar PATH
-call :refresh_path
+:: Recarregar PATH do registro
+for /f "skip=2 tokens=3*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "PATH=%%A %%B"
+for /f "skip=2 tokens=3*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "PATH=!PATH!;%%A %%B"
 
-where python >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [OK] Python instalado com sucesso.
-    echo Python instalado OK >> "%LOG%"
-) else (
-    echo [ERRO] Python nao foi instalado corretamente.
-    echo [ERRO] Instale manualmente: https://www.python.org/downloads/
-    set /a ERROS+=1
+:: Tenta achar python apos instalacao
+for %%P in (
+    "C:\Program Files\Python313\python.exe"
+    "C:\Program Files (x86)\Python313\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+    "C:\Python313\python.exe"
+) do (
+    if "!PYTHON_EXE!"=="" if exist "%%~P" set "PYTHON_EXE=%%~P"
 )
+
+if "!PYTHON_EXE!"=="" (
+    echo [AVISO] Python instalado mas nao encontrado no PATH ainda.
+    echo         FECHE esta janela, abra uma nova como Admin e execute novamente.
+    echo         Ou reinicie o PC e execute novamente.
+    pause & exit /b 1
+)
+echo [OK] Python instalado: !PYTHON_EXE!
+echo Python instalado OK >> "%LOG%"
+
 :python_ok
-:python_skip
 
 :: ════════════════════════════════════════════════════════════════════
 echo.
-echo [2/6] Atualizando pip e instalando dependencias Python...
+echo [2/5] Dependencias Python (PySide6, loguru, wmi...)...
 :: ════════════════════════════════════════════════════════════════════
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [AVISO] Python nao encontrado - pulando pip.
-    goto :pip_skip
+echo [+] Atualizando pip...
+"!PYTHON_EXE!" -m pip install --upgrade pip --quiet --no-warn-script-location
+
+echo [+] Instalando dependencias do requirements.txt...
+"!PYTHON_EXE!" -m pip install -r "%~dp0requirements.txt" --quiet --no-warn-script-location
+if %errorlevel% equ 0 (
+    echo [OK] Dependencias instaladas.
+    echo Dependencias OK >> "%LOG%"
+) else (
+    echo [ERRO] Falha ao instalar dependencias.
+    echo [ERRO] Tente manualmente: python -m pip install -r requirements.txt
+    echo Dependencias FALHOU >> "%LOG%"
 )
 
-python -m pip install --upgrade pip --quiet
-python -m pip install -r "%~dp0requirements.txt" --quiet
-if %errorlevel% equ 0 (
-    echo [OK] Dependencias Python instaladas.
-    echo Dependencias Python OK >> "%LOG%"
-) else (
-    echo [ERRO] Falha ao instalar dependencias Python.
-    set /a ERROS+=1
-)
-
-python -m pip install pyinstaller --quiet
-if %errorlevel% equ 0 (
-    echo [OK] PyInstaller instalado.
-) else (
-    echo [AVISO] Falha ao instalar PyInstaller.
-)
-:pip_skip
+echo [+] Instalando PyInstaller...
+"!PYTHON_EXE!" -m pip install pyinstaller --quiet --no-warn-script-location
+echo [OK] PyInstaller instalado.
 
 :: ════════════════════════════════════════════════════════════════════
 echo.
-echo [3/6] Verificando/Instalando 7-Zip...
+echo [3/5] 7-Zip...
 :: ════════════════════════════════════════════════════════════════════
-if exist "C:\Program Files\7-Zip\7z.exe" (
-    echo [OK] 7-Zip ja instalado.
-    echo 7-Zip ja instalado >> "%LOG%"
-    goto :7zip_ok
-)
-if exist "C:\Program Files (x86)\7-Zip\7z.exe" (
-    echo [OK] 7-Zip ja instalado.
-    goto :7zip_ok
-)
+if exist "C:\Program Files\7-Zip\7z.exe" goto :7zip_ok
+if exist "C:\Program Files (x86)\7-Zip\7z.exe" goto :7zip_ok
 
-echo [+] Baixando 7-Zip...
-powershell -NoProfile -Command ^
-    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
-     Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7z2408-x64.exe' ^
-     -OutFile '%TEMP%\7zip_setup.exe' -UseBasicParsing"
+echo [+] Baixando 7-Zip 24.08...
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol='Tls12'; Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7z2408-x64.exe' -OutFile '%TEMP%\7zip_setup.exe'"
 
 if exist "%TEMP%\7zip_setup.exe" (
     echo [+] Instalando 7-Zip...
     "%TEMP%\7zip_setup.exe" /S
-    timeout /t 5 /nobreak >nul
+    timeout /t 6 /nobreak >nul
     if exist "C:\Program Files\7-Zip\7z.exe" (
         echo [OK] 7-Zip instalado.
-        echo 7-Zip instalado OK >> "%LOG%"
+        echo 7-Zip OK >> "%LOG%"
     ) else (
-        echo [AVISO] 7-Zip pode nao ter instalado corretamente.
+        echo [AVISO] 7-Zip nao instalado. Baixe em: https://www.7-zip.org
     )
 ) else (
-    echo [AVISO] Falha ao baixar 7-Zip. Instale manualmente: https://www.7-zip.org
+    echo [AVISO] Falha ao baixar 7-Zip. Baixe em: https://www.7-zip.org
 )
 :7zip_ok
+echo [OK] 7-Zip disponivel.
 
 :: ════════════════════════════════════════════════════════════════════
 echo.
-echo [4/6] Verificando/Instalando NSIS...
+echo [4/5] NSIS (para gerar instalador)...
 :: ════════════════════════════════════════════════════════════════════
-if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-    echo [OK] NSIS ja instalado.
-    echo NSIS ja instalado >> "%LOG%"
-    goto :nsis_ok
-)
-if exist "C:\Program Files\NSIS\makensis.exe" (
-    echo [OK] NSIS ja instalado.
-    goto :nsis_ok
-)
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" goto :nsis_ok
+if exist "C:\Program Files\NSIS\makensis.exe" goto :nsis_ok
 
-echo [+] Instalando NSIS via winget...
+echo [+] Tentando instalar NSIS via winget...
 where winget >nul 2>&1
 if %errorlevel% equ 0 (
-    winget install NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
-    timeout /t 8 /nobreak >nul
+    winget install NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements
+    timeout /t 10 /nobreak >nul
 )
 
-if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-    echo [OK] NSIS instalado via winget.
-    echo NSIS instalado OK >> "%LOG%"
-    goto :nsis_ok
-)
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" goto :nsis_ok
+if exist "C:\Program Files\NSIS\makensis.exe" goto :nsis_ok
 
-echo [+] Baixando NSIS diretamente...
-:: Fallback: instrucao manual clara
 echo.
-echo [AVISO] Download automatico do NSIS nao disponivel.
-echo.
-echo         Instale manualmente (1 minuto):
-echo         1. Abra o navegador
-echo         2. Acesse: https://nsis.sourceforge.io/Download
-echo         3. Clique em "nsis-3.xx-setup.exe"
-echo         4. Instale normalmente
-echo         5. Execute este script novamente
-echo.
-echo         OU use o winget (se disponivel):
-echo         winget install NSIS.NSIS
-echo.
-set /p "AGUARDA=Pressione ENTER apos instalar o NSIS para continuar..."
-
-if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-    echo [OK] NSIS encontrado apos instalacao manual.
-    echo NSIS instalado OK >> "%LOG%"
-) else (
-    echo [AVISO] NSIS ainda nao encontrado. Continuando sem ele.
-    echo         BUILD_INSTALLER.bat vai falhar sem o NSIS.
-)
-) else (
-    echo [AVISO] Falha ao baixar NSIS. Baixe em: https://nsis.sourceforge.io/Download
-)
+echo [AVISO] NSIS nao instalado automaticamente.
+echo         Necessario apenas para gerar o Setup.exe (BUILD_INSTALLER.bat).
+echo         Para instalar: https://nsis.sourceforge.io/Download
+echo         Ou: winget install NSIS.NSIS
+echo NSIS nao instalado >> "%LOG%"
+goto :nsis_fim
+:nsis_ok
+echo [OK] NSIS disponivel.
+echo NSIS OK >> "%LOG%"
+:nsis_fim
 
 :: ════════════════════════════════════════════════════════════════════
 echo.
-echo [5/6] Verificando Windows ADK (oscdimg)...
-:: ════════════════════════════════════════════════════════════════════
-set "OSCDIMG_FOUND=0"
-if exist "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe" set "OSCDIMG_FOUND=1"
-if exist "C:\Program Files\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe" set "OSCDIMG_FOUND=1"
-
-if "!OSCDIMG_FOUND!"=="1" (
-    echo [OK] Windows ADK ja instalado ^(oscdimg encontrado^).
-    echo ADK ja instalado >> "%LOG%"
-    goto :adk_ok
-)
-
-:: Verifica se oscdimg esta embutido no programa
-if exist "%~dp0app\resources\tools\oscdimg.exe" (
-    echo [OK] oscdimg embutido no programa ^(nao precisa do ADK^).
-    goto :adk_ok
-)
-
-echo [AVISO] Windows ADK nao encontrado.
-echo         O oscdimg esta embutido no programa para uso normal.
-echo         Para desenvolvimento/build, instale o ADK:
-echo         https://learn.microsoft.com/windows-hardware/get-started/adk-install
-echo         ^(Instale apenas "Deployment Tools"^)
-echo ADK nao instalado - usar oscdimg embutido >> "%LOG%"
-:adk_ok
-
-:: ════════════════════════════════════════════════════════════════════
-echo.
-echo [6/6] Verificando Git...
+echo [5/5] Git...
 :: ════════════════════════════════════════════════════════════════════
 where git >nul 2>&1
 if %errorlevel% equ 0 (
-    for /f "tokens=3" %%V in ('git --version 2^>^&1') do set "GIT_VER=%%V"
-    echo [OK] Git ja instalado: !GIT_VER!
+    for /f "tokens=3" %%V in ('git --version 2^>^&1') do echo [OK] Git ja instalado: %%V
     goto :git_ok
 )
 
 echo [+] Instalando Git via winget...
 where winget >nul 2>&1
 if %errorlevel% equ 0 (
-    winget install Git.Git --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
-    call :refresh_path
+    winget install Git.Git --silent --accept-package-agreements --accept-source-agreements
+    timeout /t 15 /nobreak >nul
     where git >nul 2>&1
     if %errorlevel% equ 0 (
         echo [OK] Git instalado.
-        echo Git instalado OK >> "%LOG%"
+        echo Git OK >> "%LOG%"
     ) else (
-        echo [AVISO] Git nao instalado. Baixe em: https://git-scm.com/download/win
+        echo [AVISO] Git instalado mas PATH nao atualizado ainda.
+        echo         Feche e reabra o terminal para usar git.
     )
 ) else (
     echo [AVISO] winget nao disponivel. Baixe Git em: https://git-scm.com/download/win
@@ -255,41 +204,49 @@ if %errorlevel% equ 0 (
 :: ════════════════════════════════════════════════════════════════════
 echo.
 echo ============================================================
-echo   RESUMO DA INSTALACAO
+echo   VERIFICACAO FINAL
 echo ============================================================
 
-:: Verificacao final
-set "STATUS_PY=[FALTA]" & where python >nul 2>&1 && set "STATUS_PY=[OK]   "
-set "STATUS_7Z=[FALTA]" & if exist "C:\Program Files\7-Zip\7z.exe" set "STATUS_7Z=[OK]   "
-set "STATUS_7Z2=[FALTA]" & if exist "C:\Program Files (x86)\7-Zip\7z.exe" set "STATUS_7Z2=[OK]   "
-if "!STATUS_7Z!"=="[OK]   " set "STATUS_7Z2=[OK]   "
-set "STATUS_NS=[FALTA]" & if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "STATUS_NS=[OK]   "
-set "STATUS_GT=[FALTA]" & where git >nul 2>&1 && set "STATUS_GT=[OK]   "
+set "OK_PY=[ FALTA ]"
+"!PYTHON_EXE!" --version >nul 2>&1 && set "OK_PY=[  OK   ]"
 
-echo   !STATUS_PY! Python 3.x
-echo   !STATUS_7Z2! 7-Zip
-echo   !STATUS_NS! NSIS (para gerar instalador)
-echo   !STATUS_GT! Git
-echo   [OK]    oscdimg (embutido no programa)
-echo   [OK]    DISM (nativo do Windows)
+set "OK_PS=[ FALTA ]"
+"!PYTHON_EXE!" -c "import PySide6" >nul 2>&1 && set "OK_PS=[  OK   ]"
+
+set "OK_7Z=[ FALTA ]"
+if exist "C:\Program Files\7-Zip\7z.exe"       set "OK_7Z=[  OK   ]"
+if exist "C:\Program Files (x86)\7-Zip\7z.exe" set "OK_7Z=[  OK   ]"
+
+set "OK_NS=[ FALTA ]"
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" set "OK_NS=[  OK   ]"
+if exist "C:\Program Files\NSIS\makensis.exe"       set "OK_NS=[  OK   ]"
+
+set "OK_GT=[ FALTA ]"
+where git >nul 2>&1 && set "OK_GT=[  OK   ]"
+
+echo.
+echo   !OK_PY! Python 3.x
+echo   !OK_PS! PySide6 (interface grafica)
+echo   !OK_7Z! 7-Zip
+echo   !OK_NS! NSIS (para BUILD_INSTALLER.bat)
+echo   !OK_GT! Git
+echo   [  OK   ] DISM (nativo do Windows)
+echo   [  OK   ] oscdimg (embutido em app\resources\tools\)
 echo.
 
-if %ERROS% gtr 0 (
-    echo   [!] %ERROS% erro^(s^) encontrado^(s^). Verifique acima.
+if "!OK_PY!"=="[ FALTA ]" (
+    echo [!] Python nao encontrado. Reinicie o PC e execute novamente.
+) else if "!OK_PS!"=="[ FALTA ]" (
+    echo [!] PySide6 nao instalado. Execute:
+    echo     !PYTHON_EXE! -m pip install -r requirements.txt
 ) else (
-    echo   Ambiente pronto! Execute BUILD_INSTALLER.bat para gerar o Setup.
+    echo   Ambiente pronto!
+    echo   Para rodar o programa: start.bat
+    echo   Para gerar instalador: BUILD_INSTALLER.bat
 )
 
 echo.
-echo   Log salvo em: %LOG%
+echo   Log: %LOG%
 echo ============================================================
 echo.
 pause
-goto :EOF
-
-:: ── Funcao: recarregar PATH sem reiniciar ────────────────────────────
-:refresh_path
-for /f "tokens=2*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul') do set "SYS_PATH=%%B"
-for /f "tokens=2*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul') do set "USR_PATH=%%B"
-set "PATH=!SYS_PATH!;!USR_PATH!"
-goto :eof
