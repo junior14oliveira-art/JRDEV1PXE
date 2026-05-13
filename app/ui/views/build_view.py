@@ -101,7 +101,8 @@ class BuildView(QWidget):
             return
         base = Path(self._source_dir)
         ver = self._txt_version.text().strip().replace(".", "_")
-        default_out = str(base.parent / f"{base.name}_v{ver}.iso")
+        # Sufixo _NET indica que tem drivers de rede injetados
+        default_out = str(base.parent / f"{base.name}_NET_v{ver}.iso")
         self._txt_dest.setText(default_out)
 
     def set_oscdimg_path(self, path: str):

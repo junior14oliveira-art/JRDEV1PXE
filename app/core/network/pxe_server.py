@@ -275,11 +275,8 @@ class PxeServer:
 
         xfer = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         xfer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # BUG FIX: Bind em 0.0.0.0 (nao no IP especifico).
-        # Clientes UEFI rigorosos (Dell, HP) exigem que a resposta venha do mesmo
-        # endereco que recebeu o RRQ. Ao usar 0.0.0.0 o kernel roteia corretamente.
         xfer.bind(('0.0.0.0', 0))
-        xfer.settimeout(5.0)
+        xfer.settimeout(3.0)
 
         try:
             file_size = path.stat().st_size
@@ -288,7 +285,6 @@ class PxeServer:
             blksize = 512
             parts = rrq_data[2:].split(b'\x00')
             options = {}
-            # parts[0]=filename, parts[1]=mode, depois pares chave/valor
             for i in range(2, len(parts) - 1, 2):
                 if parts[i]:
                     opt_name = parts[i].decode(errors='ignore').lower()
@@ -298,7 +294,6 @@ class PxeServer:
             use_oack = False
             oack_pkt = bytearray(b'\x00\x06')  # OACK Opcode
             if 'blksize' in options:
-                # Limitar a 1468 para evitar fragmentacao em redes com MTU 1500
                 blksize = min(int(options['blksize']), 1468)
                 oack_pkt += b'blksize\x00' + str(blksize).encode() + b'\x00'
                 use_oack = True
@@ -308,35 +303,40 @@ class PxeServer:
 
             self._log(f"[TFTP] Enviando {filename} ({file_size // 1024} KB) | BlkSize={blksize}")
 
-            # 2. Se pediu opcoes, mandar OACK primeiro e aguardar ACK(0)
+            # 2. Se pediu opcoes, mandar OACK e aguardar ACK(0)
+            # Aumentado para 8 retries com 3s timeout cada = 24s total
             if use_oack:
-                retries = 3
+                retries = 8
                 oack_acked = False
                 while retries > 0:
                     xfer.sendto(bytes(oack_pkt), client_addr)
                     try:
-                        ack_data, _ = xfer.recvfrom(512)
-                        # ACK para OACK deve ter block number = 0
-                        if len(ack_data) >= 4 and ack_data[1] == 4 and ack_data[2:4] == b'\x00\x00':
-                            oack_acked = True
-                            break
+                        ack_data, ack_addr = xfer.recvfrom(512)
+                        # Aceita ACK do mesmo IP (ignora porta diferente = RRQ duplicado)
+                        if ack_addr[0] == client_addr[0]:
+                            if len(ack_data) >= 4 and ack_data[1] == 4 and ack_data[2:4] == b'\x00\x00':
+                                oack_acked = True
+                                break
+                            # Se receber outro RRQ (opcode 1) do mesmo cliente, reenviar OACK
+                            if ack_data[1] == 1:
+                                retries += 1  # nao penaliza por RRQ duplicado
                     except socket.timeout:
                         retries -= 1
                 if not oack_acked:
-                    self._log(f"[TFTP] Timeout aguardando ACK do OACK para {filename}")
-                    return
+                    self._log(f"[TFTP] Timeout aguardando ACK do OACK para {filename} — tentando sem OACK")
+                    # Fallback: tentar sem negociacao de opcoes (blksize=512)
+                    blksize = 512
+                    use_oack = False
 
             # 3. Transmissao do arquivo bloco a bloco (RFC 1350)
             with open(path, "rb") as f:
                 block = 1
                 while True:
                     chunk = f.read(blksize)
-                    # chunk vazio ou menor que blksize = ultimo bloco (sinal de EOF)
                     is_last = len(chunk) < blksize
 
                     pkt = struct.pack(">HH", 3, block % 65536) + chunk
-                    
-                    # Enviar com retransmissao
+
                     retries = 5
                     acked = False
                     while retries > 0:
@@ -354,7 +354,6 @@ class PxeServer:
                         return
 
                     block += 1
-                    # BUG FIX: usar blksize negociado (nao hardcoded 512) para detectar EOF
                     if is_last:
                         break
 
@@ -427,13 +426,15 @@ class PxeServer:
         return opts
 
     def _get_ip_for_mac(self, mac: bytes) -> str:
-        """Aloca IP para o cliente PXE, assim como o iVentoy (pool .200+)."""
+        """Aloca IP único por MAC. Pool começa em .200."""
         mac_str = mac.hex(':')
         if mac_str not in self._leases:
+            # Garante que cada MAC recebe um IP diferente
+            offset = 200 + len(self._leases)
+            if offset > 250:
+                offset = 200  # wrap
             base = ".".join(self.ip.split('.')[:-1])
-            # Forcar pool iniciando em 200
-            self._leases[mac_str] = f"{base}.{max(200, self._next_ip_offset)}"
-            self._next_ip_offset += 1
+            self._leases[mac_str] = f"{base}.{offset}"
         return self._leases[mac_str]
 
     def _handle_dhcp(self, sock, data, addr, port):
@@ -449,30 +450,40 @@ class PxeServer:
         vendor_class = opts.get(60, b'')
         is_pxe = vendor_class.startswith(b'PXEClient')
 
-        if not is_pxe and not is_ipxe:
-            return  # Ignorar tráfego nao-PXE
-
+        # Responder DHCP normal (wpeinit apos boot) E PXE
+        # Sem esse bloco o WinPE fica em 169.254.x (APIPA) apos carregar
         if msg_type == 1:  # DHCPDISCOVER
-            self._log(f"[DHCP] <<< DISCOVER PXE de {mac_str} (iPXE={is_ipxe})")
+            if is_pxe or is_ipxe:
+                self._log(f"[DHCP] <<< DISCOVER PXE de {mac_str} (iPXE={is_ipxe})")
+            else:
+                self._log(f"[DHCP] <<< DISCOVER normal de {mac_str} (WinPE/OS)")
             self._send_dhcp_reply(sock, data, mac, xid, 2, is_ipxe)  # OFFER
+
         elif msg_type == 3:  # DHCPREQUEST
             req_ip = socket.inet_ntoa(opts[50]) if 50 in opts else "N/A"
             srv_id = socket.inet_ntoa(opts[54]) if 54 in opts else "N/A"
-            self._log(f"[DHCP] <<< REQUEST PXE de {mac_str} na porta {port} (Requer IP: {req_ip}, Do Servidor: {srv_id})")
-            
-            # So responder com ACK se o Server ID for para nós, ou se nao tiver Server ID (renew)
+            if is_pxe or is_ipxe:
+                self._log(f"[DHCP] <<< REQUEST PXE de {mac_str} na porta {port} (IP: {req_ip}, Srv: {srv_id})")
+            else:
+                self._log(f"[DHCP] <<< REQUEST normal de {mac_str} (IP: {req_ip})")
+
             if srv_id == self.ip or srv_id == "N/A":
                 self._send_dhcp_reply(sock, data, mac, xid, 5, is_ipxe)  # ACK
             else:
-                self._log(f"[DHCP] Ignorando REQUEST (enderecado ao roteador {srv_id})")
+                self._log(f"[DHCP] Ignorando REQUEST (enderecado a {srv_id})")
 
     def _send_dhcp_reply(self, sock, data, mac, xid, reply_type, is_ipxe):
         """Envia pacote DHCP (OFFER ou ACK) com alocação de IP."""
         offered_ip = self._get_ip_for_mac(mac)
-        boot_file = f"http://{self.ip}:8080/boot.ipxe" if is_ipxe else "ipxe.efi"
         type_name = "OFFER" if reply_type == 2 else "ACK"
-        
-        self._log(f"[DHCP] >>> {type_name}: IP={offered_ip} boot={boot_file}")
+
+        # Boot file só para clientes PXE/iPXE — DHCP normal não leva boot file
+        is_pxe_client = is_ipxe or (
+            self._parse_options(data).get(60, b'').startswith(b'PXEClient')
+        )
+        boot_file = (f"http://{self.ip}:8080/boot.ipxe" if is_ipxe else "ipxe.efi") if is_pxe_client else ""
+
+        self._log(f"[DHCP] >>> {type_name}: IP={offered_ip}" + (f" boot={boot_file}" if boot_file else ""))
 
         pkt = bytearray(240)
         pkt[0] = 2       # BOOTREPLY
@@ -480,41 +491,39 @@ class PxeServer:
         pkt[2] = 6       # MAC length
         pkt[4:8] = xid
         pkt[10:12] = b'\x80\x00'  # Broadcast
-        pkt[16:20] = socket.inet_aton(offered_ip)  # yiaddr (IP Oferecido)
-        pkt[20:24] = socket.inet_aton(self.ip)     # siaddr (Server IP)
+        pkt[16:20] = socket.inet_aton(offered_ip)
+        pkt[20:24] = socket.inet_aton(self.ip)
         pkt[28:34] = mac
 
-        sname = self.ip.encode('ascii')[:64]
-        pkt[44:44 + len(sname)] = sname
-
-        bf = boot_file.encode('ascii')[:127] + b'\x00'
-        pkt[108:108 + len(bf)] = bf
+        if is_pxe_client:
+            sname = self.ip.encode('ascii')[:64]
+            pkt[44:44 + len(sname)] = sname
+            bf = boot_file.encode('ascii')[:127] + b'\x00'
+            pkt[108:108 + len(bf)] = bf
 
         pkt[236:240] = b'\x63\x82\x53\x63'  # Magic cookie
 
         options = bytearray()
         options += bytes([53, 1, reply_type])
         options += bytes([54, 4]) + socket.inet_aton(self.ip)
-        options += bytes([1, 4]) + socket.inet_aton(self.mask)  # Subnet Mask
-        options += bytes([3, 4]) + socket.inet_aton(self.ip)    # Router (Fake)
-        options += bytes([51, 4]) + struct.pack('!I', 3600)     # Lease Time
-        options += bytes([60, 9]) + b'PXEClient'
-        
-        # Option 43: Vendor-Specific (MÁGICA DO PXE)
-        # Sub-opção 6: PXE_DISCOVERY_CONTROL = 8 (Pula a descoberta e vai direto pro TFTP)
-        vendor_opts = bytes([6, 1, 8])
-        options += bytes([43, len(vendor_opts)]) + vendor_opts
-        
-        tftp_name = self.ip.encode('ascii') + b'\x00'
-        options += bytes([66, len(tftp_name)]) + tftp_name
-        bf67 = boot_file.encode('ascii') + b'\x00'
-        options += bytes([67, len(bf67)]) + bf67
-        options += bytes([255])
+        options += bytes([1, 4]) + socket.inet_aton(self.mask)   # Subnet Mask
+        options += bytes([3, 4]) + socket.inet_aton(self.ip)     # Router
+        options += bytes([51, 4]) + struct.pack('!I', 7200)      # Lease 2h
+        options += bytes([6, 4]) + socket.inet_aton(self.ip)     # DNS = servidor
 
+        if is_pxe_client:
+            options += bytes([60, 9]) + b'PXEClient'
+            vendor_opts = bytes([6, 1, 8])
+            options += bytes([43, len(vendor_opts)]) + vendor_opts
+            tftp_name = self.ip.encode('ascii') + b'\x00'
+            options += bytes([66, len(tftp_name)]) + tftp_name
+            bf67 = boot_file.encode('ascii') + b'\x00'
+            options += bytes([67, len(bf67)]) + bf67
+
+        options += bytes([255])
         pkt += options
 
         try:
-            # Enviar via broadcast global (obrigatorio para UEFI) usando o socket dedicado (Ethernet)
             self._send_sock.sendto(bytes(pkt), ('255.255.255.255', 68))
             self._log(f"[DHCP] >>> {type_name} enviado pela placa {self.ip}")
         except Exception as e:
@@ -536,35 +545,152 @@ class PxeServer:
 
 
 def get_network_interfaces():
-    """Detecta interfaces de rede ativas via PowerShell."""
+    """Detecta interfaces de rede ativas via PowerShell, filtrando virtuais."""
     interfaces = []
-    script = ("Get-NetIPConfiguration | Where-Object "
-              "{ $_.NetAdapter.Status -eq 'Up' -and $_.IPv4Address } "
-              "| ConvertTo-Json")
+
+    # Palavras-chave de interfaces a ignorar para PXE
+    # Wi-Fi incluído: PXE DHCP broadcast não funciona de forma confiável via wireless
+    VIRTUAL_KEYWORDS = [
+        "virtualbox", "vbox", "vmware", "vmnet", "hyper-v", "hyperv",
+        "vethernet", "loopback", "bluetooth", "wsl", "docker",
+        "npcap", "tap", "tunnel", "pseudo", "isatap", "teredo",
+        # Wi-Fi / Wireless — nunca usar para PXE
+        "wi-fi", "wifi", "wireless", "wlan", "802.11",
+    ]
+
+    # Prefixos de IP que NÃO são redes físicas reais
+    VIRTUAL_PREFIXES = (
+        "192.168.56.",   # VirtualBox Host-Only padrão
+        "192.168.99.",   # Docker / VirtualBox alternativo
+        "172.17.",       # Docker bridge
+        "172.18.",       # Docker bridge
+        "172.19.",       # Docker bridge
+        "172.20.",       # Docker bridge
+        "172.21.",       # Docker bridge
+        "172.22.",       # Docker bridge
+        "172.23.",       # Docker bridge
+        "172.24.",       # Docker bridge
+        "172.25.",       # Docker bridge
+        "172.26.",       # Hyper-V Default Switch
+        "172.27.",       # Hyper-V
+        "172.28.",       # Hyper-V
+        "172.29.",       # Hyper-V
+        "172.30.",       # Hyper-V
+        "172.31.",       # Hyper-V
+        "10.0.75.",      # Docker NAT
+        "169.254.",      # APIPA (sem DHCP)
+        "127.",          # Loopback
+    )
+
+    script = (
+        # Junta Get-NetAdapter (tem MediaType) com Get-NetIPAddress (tem o IP)
+        "Get-NetAdapter | ForEach-Object { "
+        "  $a = $_; "
+        "  Get-NetIPAddress -InterfaceIndex $a.InterfaceIndex "
+        "    -AddressFamily IPv4 -ErrorAction SilentlyContinue | "
+        "  Where-Object { $_.IPAddress -notlike '169.254.*' } | "
+        "  Select-Object @{N='Name';E={$a.Name}}, "
+        "    @{N='MediaType';E={$a.MediaType}}, "
+        "    @{N='PhysicalMediaType';E={$a.PhysicalMediaType}}, "
+        "    IPAddress, PrefixLength "
+        "} | ConvertTo-Json"
+    )
     try:
         res = subprocess.run(
             ['powershell', '-NoProfile', '-Command', script],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=15
         )
         if not res.stdout.strip():
             return []
         data = json.loads(res.stdout)
         if isinstance(data, dict):
             data = [data]
+
         for item in data:
-            prefix = int(item['IPv4Address']['PrefixLength'])
+            name        = item.get('Name', '')
+            media_type  = str(item.get('MediaType', '')).lower()
+            phys_media  = str(item.get('PhysicalMediaType', '')).lower()
+            ip          = item.get('IPAddress', '')
+            prefix      = int(item.get('PrefixLength', 24))
+
+            # Filtrar Wi-Fi pelo MediaType (mais confiável que o nome)
+            if '802.11' in media_type or '802.11' in phys_media:
+                continue
+            if 'bluetooth' in phys_media:
+                continue
+
+            # Filtrar por nome de interface (virtual + wireless — defesa extra)
+            name_lower = name.lower()
+            if any(kw in name_lower for kw in VIRTUAL_KEYWORDS):
+                continue
+
+            # Filtrar por prefixo de IP (redes virtuais conhecidas)
+            if ip.startswith(VIRTUAL_PREFIXES):
+                continue
+
             mask_int = (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
             mask = socket.inet_ntoa(struct.pack('!I', mask_int))
             interfaces.append({
-                'name': item['InterfaceAlias'],
-                'ip': item['IPv4Address']['IPAddress'],
+                'name': name,
+                'ip': ip,
                 'mask': mask,
             })
+
     except Exception:
-        hostname = socket.gethostname()
-        interfaces.append({
-            'name': 'Padrao',
-            'ip': socket.gethostbyname(hostname),
-            'mask': '255.255.255.0',
-        })
+        # Fallback: tenta todas as IPs do hostname, filtra virtuais e wireless
+        try:
+            hostname = socket.gethostname()
+            all_ips = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            seen = set()
+            candidates = []
+            for info in all_ips:
+                ip = info[4][0]
+                if ip in seen:
+                    continue
+                seen.add(ip)
+                if ip.startswith(VIRTUAL_PREFIXES) or ip.startswith('127.'):
+                    continue
+                candidates.append(ip)
+
+            # Preferir IPs de rede local cabeada (192.168.0.x, 10.x)
+            # Excluir 192.168.0.253 se houver outro IP disponível (Wi-Fi costuma ser .253+)
+            preferred = [ip for ip in candidates
+                         if ip.startswith('192.168.0.') or ip.startswith('10.')]
+            # Se tiver mais de um 192.168.0.x, pegar o menor (Ethernet tende a ter IP menor)
+            if len(preferred) > 1:
+                preferred.sort(key=lambda x: int(x.split('.')[-1]))
+
+            final_ips = preferred if preferred else candidates
+            for ip in final_ips:
+                interfaces.append({
+                    'name': 'Ethernet',
+                    'ip': ip,
+                    'mask': '255.255.255.0',
+                })
+
+            if not interfaces:
+                interfaces.append({
+                    'name': 'Ethernet',
+                    'ip': '192.168.0.21',
+                    'mask': '255.255.255.0',
+                })
+        except Exception:
+            interfaces.append({
+                'name': 'Ethernet',
+                'ip': '192.168.0.21',
+                'mask': '255.255.255.0',
+            })
+
+    # Ordenar: Ethernet física primeiro (por número de IP crescente como desempate)
+    def _sort_key(iface):
+        name_lower = iface['name'].lower()
+        if 'ethernet' in name_lower or 'eth' in name_lower or 'local' in name_lower:
+            # Desempate: IP menor = Ethernet física (ex: .21 antes de .253)
+            try:
+                return (0, int(iface['ip'].split('.')[-1]))
+            except Exception:
+                return (0, 999)
+        return (1, 999)
+
+    interfaces.sort(key=_sort_key)
     return interfaces

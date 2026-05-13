@@ -166,6 +166,7 @@ class DismService:
             f"/Image:{mount_dir}",
             f"/Add-Driver",
             f"/Driver:{driver_path}",
+            "/ForceUnsigned",
         ]
         if recurse:
             args.append("/Recurse")

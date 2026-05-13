@@ -14,7 +14,8 @@ from app.core.iso_service import IsoService
 
 class CustomizationView(QWidget):
     log_message = Signal(str)
-    commit_finished = Signal() # Novo sinal para automação
+    commit_finished = Signal()   # Novo sinal para automação
+    wim_mounted = Signal(bool)   # True = montado, False = desmontado
 
     def __init__(self):
         super().__init__()
@@ -146,16 +147,16 @@ class CustomizationView(QWidget):
         self._btn_mount.setEnabled(True)
         if success:
             self._is_mounted = True
-            # msg contém o diretório real usado (pode ser alternativo ex: Mount_102030)
             import os
             if os.path.isdir(msg):
                 if self._mount_dir != msg:
                     self.log_message.emit(f"⚠️ Usando pasta alternativa: {msg}")
-                self._mount_dir = msg  # Atualiza para o diretório real
+                self._mount_dir = msg
             self._btn_mount.setText("💾  Salvar e Desmontar")
             self._lbl_mount_status.setText(f"IMAGEM MONTADA E PRONTA PARA EDIÇÃO.\n{self._mount_dir}")
             self._lbl_mount_status.setStyleSheet("color: #a6e3a1;")
             self._grp_tools.setEnabled(True)
+            self.wim_mounted.emit(True)   # ← avisa MainWindow
         else:
             QMessageBox.critical(self, "Erro na Montagem", msg)
 
@@ -189,6 +190,7 @@ class CustomizationView(QWidget):
             self._lbl_mount_status.setText("WIM não montado. Monte para editar arquivos internos.")
             self._lbl_mount_status.setStyleSheet("color: #f38ba8;")
             self._grp_tools.setEnabled(False)
+            self.wim_mounted.emit(False)  # ← avisa MainWindow
 
             if was_commit:
                 self.commit_finished.emit()

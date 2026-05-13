@@ -107,6 +107,7 @@ class MainWindow(QMainWindow):
         self._v_files.status_message.connect(self.statusBar().showMessage)
         self._v_custom.log_message.connect(self._v_logs.append)
         self._v_custom.commit_finished.connect(self._on_custom_commit_done)
+        self._v_custom.wim_mounted.connect(self._on_wim_mounted)
         self._v_pxe.log_message.connect(self._v_logs.append)
         self._v_build.log_message.connect(self._v_logs.append)
 
@@ -157,6 +158,32 @@ class MainWindow(QMainWindow):
         self._lbl_iso_name.setWordWrap(True)
         layout.addWidget(self._lbl_iso_name)
 
+        layout.addSpacing(8)
+
+        # Botão fechar / encerrar tudo
+        btn_exit = QPushButton(" ⏻  Fechar Programa")
+        btn_exit.setObjectName("BtnExit")
+        btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_exit.setFixedHeight(36)
+        btn_exit.setStyleSheet(
+            "QPushButton#BtnExit {"
+            "  background-color: #313244;"
+            "  color: #f38ba8;"
+            "  border: 1px solid #f38ba8;"
+            "  border-radius: 6px;"
+            "  font-weight: bold;"
+            "  margin: 0 12px;"
+            "}"
+            "QPushButton#BtnExit:hover {"
+            "  background-color: #f38ba8;"
+            "  color: #1e1e2e;"
+            "}"
+        )
+        btn_exit.clicked.connect(self._confirm_exit)
+        layout.addWidget(btn_exit)
+
+        layout.addSpacing(8)
+
         # Selecionar Dashboard por padrão
         self._nav_buttons["dashboard"].setChecked(True)
         return sidebar
@@ -186,7 +213,6 @@ class MainWindow(QMainWindow):
     def _on_iso_selected(self, iso_path: str):
         import time
         iso = Path(iso_path)
-        # Adiciona o horário (HHMMSS) ao nome para garantir que a pasta seja sempre nova e única
         stamp = time.strftime("%H%M%S")
         work = WORK_DIR / f"{iso.stem}_{stamp}"
         self._work_dir = str(work)
@@ -199,16 +225,10 @@ class MainWindow(QMainWindow):
         # Bloquear ações durante a extração
         self._v_files.setEnabled(False)
         self._v_build.setEnabled(False)
+        self._v_pxe.setEnabled(False)  # PXE bloqueado até extração + injeção terminar
 
-        # Log
         self._v_logs.append(f"ISO selecionada: {iso_path}")
         self._v_logs.append(f"Pasta de trabalho: {work}")
-        
-        # Preencher views imediatamente para dar feedback
-        self._v_files.set_root(self._work_dir)
-        self._v_custom.set_project(self._work_dir)
-        self._v_pxe.set_project(self._work_dir)
-        self._v_build.set_source(self._work_dir)
         
         self._navigate("logs")
 
@@ -228,15 +248,170 @@ class MainWindow(QMainWindow):
         self._v_files.setEnabled(True)
         self._v_custom.setEnabled(True)
         self._v_build.setEnabled(True)
+        self._v_pxe.setEnabled(True)
 
         if success:
+            # Atualiza TODAS as views com o projeto correto APÓS extração completa
             self._v_files.set_root(self._work_dir)
             self._v_custom.set_project(self._work_dir)
-            self._v_pxe.set_project(self._work_dir)
             self._v_build.set_source(self._work_dir)
-            self._navigate("files")
+            self._v_pxe.set_project(self._work_dir)
+            self._v_logs.append(f"✅ Projeto carregado: {self._work_dir}")
+
+            # Pergunta se quer injetar drivers de rede
+            resp = QMessageBox.question(
+                self,
+                "Injetar Drivers de Rede?",
+                "Deseja injetar drivers de rede no boot.wim agora?\n\n"
+                "✅ Sim — necessário para ISOs sem drivers (WinPE limpo, ADK)\n"
+                "❌ Não — ISOs que já têm drivers (Strelec, Hiren's)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+
+            if resp == QMessageBox.StandardButton.Yes:
+                self._v_logs.append("🔌 Injeção de drivers solicitada — iniciando...")
+                self._inject_drivers_async()
+            else:
+                self._v_logs.append("⏭️  Injeção de drivers ignorada.")
+                self._v_logs.append("🚀 Pode iniciar o servidor PXE agora.")
+                self._navigate("files")
         else:
             QMessageBox.critical(self, "Erro na Extração", msg)
+
+    def _inject_drivers_async(self):
+        """Inicia a injeção de drivers em background (reutiliza o worker)."""
+        from app.workers.iso_worker import ExtractIsoWorker
+        # Cria um worker só para injeção (iso_path vazio, work_dir já extraído)
+        self._inject_worker = _DriverInjectWorker(self._work_dir)
+        self._inject_worker.log_message.connect(self._v_logs.append)
+        self._inject_worker.finished.connect(self._on_inject_done)
+        self._global_progress.show()
+        self._global_progress.setValue(0)
+        self._v_pxe.setEnabled(False)
+        self._inject_worker.start()
+
+    @Slot(bool, str)
+    def _on_inject_done(self, success: bool, msg: str):
+        self._global_progress.hide()
+        self._v_pxe.setEnabled(True)
+        self._v_logs.append(f"{'✅' if success else '⚠️'} {msg}")
+        self._v_logs.append("🚀 Pode iniciar o servidor PXE agora.")
+        self._navigate("files")
+    @Slot(bool)
+    def _on_wim_mounted(self, mounted: bool):
+        """Bloqueia 'Gerar ISO' enquanto o WIM estiver montado."""
+        self._v_build.setEnabled(not mounted)
+        if mounted:
+            self.statusBar().showMessage(
+                "⚠️ WIM montado — finalize a edição e clique 'Salvar e Desmontar' antes de gerar a ISO."
+            )
+        else:
+            self.statusBar().showMessage("WIM desmontado. Pode gerar a ISO.")
+
+    # ─────────────────────────────────────────────────────────────────── #
+    #  Fechar / Encerrar tudo                                              #
+    # ─────────────────────────────────────────────────────────────────── #
+    def _confirm_exit(self):
+        """Botão 'Fechar Programa' — pede confirmação e encerra tudo."""
+        # Avisa se o servidor PXE estiver rodando
+        pxe_running = getattr(self._v_pxe, '_is_running', False)
+        wim_mounted = getattr(self._v_custom, '_is_mounted', False)
+
+        warnings = []
+        if pxe_running:
+            warnings.append("• Servidor PXE está ativo — será encerrado")
+        if wim_mounted:
+            warnings.append("• WIM está montado — será desmontado SEM salvar")
+
+        msg = "Deseja fechar o WinPE Studio e encerrar todos os processos?"
+        if warnings:
+            msg += "\n\n⚠️ Atenção:\n" + "\n".join(warnings)
+
+        resp = QMessageBox.question(
+            self, "Fechar Programa", msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if resp == QMessageBox.StandardButton.Yes:
+            self._shutdown_all()
+            self.close()
+
+    def _shutdown_all(self):
+        """Para todos os serviços e workers antes de fechar."""
+        import sys
+
+        self._v_logs.append("🔴 Encerrando todos os processos...")
+
+        # 1. Parar servidor PXE
+        try:
+            if getattr(self._v_pxe, '_is_running', False):
+                self._v_logs.append("  → Parando servidor PXE...")
+                self._v_pxe._stop_server()
+        except Exception as e:
+            self._v_logs.append(f"  ⚠️ PXE: {e}")
+
+        # 2. Desmontar WIM se estiver montado (sem salvar)
+        try:
+            if getattr(self._v_custom, '_is_mounted', False):
+                self._v_logs.append("  → Desmontando WIM (descartando)...")
+                from app.core.dism_service import DismService
+                DismService().unmount_wim(
+                    self._v_custom._mount_dir,
+                    commit=False,
+                    log_cb=self._v_logs.append,
+                )
+        except Exception as e:
+            self._v_logs.append(f"  ⚠️ WIM: {e}")
+
+        # 3. Parar workers em background
+        for attr in ('_worker', '_inject_worker'):
+            try:
+                w = getattr(self, attr, None)
+                if w and w.isRunning():
+                    self._v_logs.append(f"  → Aguardando worker {attr}...")
+                    w.quit()
+                    w.wait(2000)
+            except Exception:
+                pass
+
+        # 4. Parar download worker se existir
+        try:
+            dw = getattr(self._v_download, '_worker', None)
+            if dw and dw.isRunning():
+                self._v_logs.append("  → Parando download...")
+                dw.quit()
+                dw.wait(2000)
+        except Exception:
+            pass
+
+        self._v_logs.append("✅ Tudo encerrado.")
+
+    def closeEvent(self, event):
+        """Intercepta o X da janela — mesma lógica do botão Fechar."""
+        pxe_running = getattr(self._v_pxe, '_is_running', False)
+        wim_mounted = getattr(self._v_custom, '_is_mounted', False)
+
+        if pxe_running or wim_mounted:
+            warnings = []
+            if pxe_running:
+                warnings.append("• Servidor PXE está ativo — será encerrado")
+            if wim_mounted:
+                warnings.append("• WIM está montado — será desmontado SEM salvar")
+
+            msg = "Deseja fechar o WinPE Studio?\n\n⚠️ Atenção:\n" + "\n".join(warnings)
+            resp = QMessageBox.question(
+                self, "Fechar", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+
+        self._shutdown_all()
+        event.accept()
+
     @Slot()
     def _on_custom_commit_done(self):
         """Chamado quando o usuário termina de editar e salva o WIM."""
@@ -250,3 +425,34 @@ class MainWindow(QMainWindow):
             self._navigate("build")
             # Iniciar o build automaticamente com as configurações padrão
             self._v_build._start_build()
+
+
+# ── Worker dedicado apenas para injeção de drivers ───────────────────────── #
+from app.workers.base_worker import BaseWorker
+from app.core.iso_service import IsoService
+
+class _DriverInjectWorker(BaseWorker):
+    """Injeta drivers de rede num projeto já extraído, sem re-extrair a ISO."""
+
+    def __init__(self, work_dir: str, parent=None):
+        super().__init__(parent)
+        self.work_dir = work_dir
+
+    def run(self):
+        try:
+            svc = IsoService()
+            info = svc.detect_winpe_structure(self.work_dir)
+            if not info.get("boot_wim"):
+                self.finished.emit(False, "boot.wim não encontrado no projeto.")
+                return
+
+            # Importa e reutiliza a lógica de injeção do ExtractIsoWorker
+            from app.workers.iso_worker import ExtractIsoWorker
+            # Cria instância temporária só para usar o método de injeção
+            injector = ExtractIsoWorker.__new__(ExtractIsoWorker)
+            injector.log_message = self.log_message  # compartilha o signal de log
+            injector._log = self._log
+            injector._inject_network_drivers(info["boot_wim"])
+            self.finished.emit(True, "Injeção de drivers concluída.")
+        except Exception as e:
+            self.finished.emit(False, f"Erro na injeção: {e}")

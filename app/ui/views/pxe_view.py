@@ -198,18 +198,52 @@ class PxeView(QWidget):
         self._ind_http.setStyleSheet("color: #f38ba8; font-weight: bold;")
 
     def _load_interfaces(self):
-        """Carrega as interfaces de rede no combo box."""
+        """Carrega as interfaces de rede no combo box, pré-selecionando Ethernet."""
         self._interfaces = get_network_interfaces()
         self._cb_interface.clear()
-        for iface in self._interfaces:
+        best_index = 0
+        best_score = -1
+
+        for i, iface in enumerate(self._interfaces):
+            ip = iface['ip']
+            name_lower = iface['name'].lower()
+
+            # Nunca mostrar Wi-Fi (já filtrado em get_network_interfaces,
+            # mas defesa extra aqui também)
+            if any(kw in name_lower for kw in ('wi-fi', 'wifi', 'wireless', 'wlan')):
+                continue
+
             self._cb_interface.addItem(
                 f"{iface['name']} ({iface['ip']})", iface['ip']
             )
             idx = self._cb_interface.count() - 1
             self._cb_interface.setItemData(idx, iface['mask'], Qt.UserRole + 1)
 
-        if not self._interfaces:
-            self._cb_interface.addItem("Nenhuma interface encontrada", "0.0.0.0")
+            # Pontuação para auto-seleção:
+            # Ethernet + 192.168.0.x = melhor (score 3)
+            # Ethernet + outro IP    = bom    (score 2)
+            # Outro + 192.168.0.x   = ok     (score 1)
+            score = 0
+            is_eth = 'ethernet' in name_lower or 'eth' in name_lower
+            is_lan = ip.startswith('192.168.0.') or ip.startswith('10.')
+            if is_eth:
+                score += 2
+            if is_lan:
+                score += 1
+            # Desempate: IP menor = Ethernet física (ex: .21 antes de .100)
+            try:
+                tiebreak = 1000 - int(ip.split('.')[-1])
+            except Exception:
+                tiebreak = 0
+            if score > best_score or (score == best_score and tiebreak > 0):
+                best_score = score
+                best_index = self._cb_interface.count() - 1
+
+        if self._cb_interface.count() == 0:
+            self._cb_interface.addItem("Nenhuma interface Ethernet encontrada", "0.0.0.0")
+        else:
+            self._cb_interface.setCurrentIndex(best_index)
+            self._on_interface_changed()
 
     def _on_interface_changed(self):
         """Atualiza o label do IP quando o usuário troca a placa."""
