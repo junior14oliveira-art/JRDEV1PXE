@@ -1,0 +1,115 @@
+/* Base Window Background */
+QMainWindow, QWidget {
+    background-color: #1E1E2E;
+    color: #CDD6F4;
+    font-family: "Segoe UI", "Inter", sans-serif;
+    font-size: 14px;
+}
+
+/* Sidebar */
+#Sidebar {
+    background-color: #181825;
+    border-right: 1px solid #313244;
+}
+
+#SidebarLogo {
+    font-size: 24px;
+    font-weight: bold;
+    color: #89B4FA;
+    padding: 10px;
+}
+
+#NavButton {
+    background-color: transparent;
+    border: none;
+    color: #A6ADC8;
+    text-align: left;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+#NavButton:hover {
+    background-color: #313244;
+    color: #CDD6F4;
+}
+
+#NavButton:checked {
+    background-color: #89B4FA;
+    color: #11111B;
+    font-weight: bold;
+}
+
+/* Header */
+#Header {
+    background-color: #181825;
+    border-bottom: 1px solid #313244;
+}
+
+#HeaderTitle {
+    font-size: 20px;
+    font-weight: 600;
+    color: #CDD6F4;
+    padding-left: 20px;
+}
+
+#BuildButton {
+    background-color: #A6E3A1;
+    color: #11111B;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 24px;
+    font-weight: bold;
+    margin-right: 20px;
+}
+
+#BuildButton:hover {
+    background-color: #94E2D5;
+}
+
+/* Dashboard */
+#WelcomeText {
+    font-size: 28px;
+    font-weight: 700;
+    color: #89B4FA;
+}
+
+#InfoCard {
+    background-color: #313244;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+#CardTitle {
+    color: #A6ADC8;
+    font-size: 14px;
+    text-transform: uppercase;
+}
+
+#CardValue {
+    color: #F5E0DC;
+    font-size: 36px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+/* Common */
+#SectionTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #89B4FA;
+    margin-bottom: 10px;
+}
+
+/* TreeView */
+QTreeView {
+    background-color: #181825;
+    border: 1px solid #313244;
+    border-radius: 8px;
+}
+
+QTreeView::item:selected {
+    background-color: #89B4FA;
+    color: #11111B;
+}

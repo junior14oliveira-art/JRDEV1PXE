@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "winpe-studio"
+version = "0.1.0"
+description = "Professional WinPE editing and customization studio."
+authors = ["Developer <dev@example.com>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+PySide6 = "^6.7.0"
+loguru = "^0.7.2"
+pydantic = "^2.7.0"
+PyYAML = "^6.0.1"
+wmi = "^1.5.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1.1"
+ruff = "^0.4.2"
+black = "^24.4.2"
+mypy = "^1.10.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]

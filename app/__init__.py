@@ -1,0 +1,1 @@
+"""WinPE Studio — pacote principal."""
