@@ -36,6 +36,9 @@ hiddenimports = [
     'PySide6.QtNetwork',
     'loguru',
     'pydantic',
+    'pydantic.deprecated.class_validators',
+    'pydantic.deprecated.config',
+    'pydantic.deprecated.tools',
     'yaml',
     'wmi',
     'win32api',
@@ -48,6 +51,22 @@ hiddenimports = [
     'json',
     'shutil',
     'subprocess',
+    # http.server e dependencias — PyInstaller nao inclui automaticamente
+    'http',
+    'http.server',
+    'http.client',
+    'http.cookies',
+    'http.cookiejar',
+    'urllib',
+    'urllib.parse',
+    'urllib.request',
+    'urllib.error',
+    'email',
+    'email.mime',
+    'email.mime.text',
+    'email.mime.multipart',
+    'html',
+    'html.parser',
 ]
 
 a = Analysis(
@@ -61,8 +80,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'matplotlib', 'numpy', 'pandas', 'scipy',
-        'tkinter', 'unittest', 'email', 'html',
-        'http.server', 'xmlrpc', 'pydoc',
+        'tkinter', 'unittest', 'xmlrpc', 'pydoc',
     ],
     noarchive=False,
     optimize=1,

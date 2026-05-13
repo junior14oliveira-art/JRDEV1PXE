@@ -32,30 +32,74 @@ if exist "C:\Program Files\NSIS\makensis.exe"       set "MAKENSIS=C:\Program Fil
 
 if "!MAKENSIS!"=="" (
     echo.
-    echo [!] NSIS nao encontrado. Baixando e instalando...
-    echo     Isso so precisa ser feito uma vez.
+    echo [!] NSIS nao encontrado. Instalando...
     echo.
-    :: Baixa o instalador do NSIS via PowerShell
-    powershell -NoProfile -Command ^
-        "Invoke-WebRequest -Uri 'https://downloads.sourceforge.net/project/nsis/NSIS%%203/3.10/nsis-3.10-setup.exe' -OutFile '%TEMP%\nsis_setup.exe' -UseBasicParsing"
-    if exist "%TEMP%\nsis_setup.exe" (
-        echo [+] Instalando NSIS silenciosamente...
-        "%TEMP%\nsis_setup.exe" /S
+
+    :: Tenta winget primeiro (Windows 10/11 moderno)
+    where winget >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo [+] Instalando via winget...
+        winget install NSIS.NSIS --silent --accept-package-agreements --accept-source-agreements
         timeout /t 5 /nobreak >nul
-        if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-            set "MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe"
-            echo [OK] NSIS instalado.
-        ) else (
-            echo [ERRO] Falha ao instalar NSIS.
-            echo Instale manualmente em: https://nsis.sourceforge.io/Download
-            pause & exit /b 1
-        )
-    ) else (
-        echo [ERRO] Falha ao baixar NSIS.
-        echo Instale manualmente em: https://nsis.sourceforge.io/Download
-        pause & exit /b 1
     )
+
+    :: Verifica se winget funcionou
+    if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+        set "MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe"
+        echo [OK] NSIS instalado via winget.
+        goto :nsis_ok
+    )
+
+    :: Fallback: download direto com PowerShell
+    echo [+] Baixando NSIS via PowerShell...
+    set "NSIS_URL=https://prdownloads.sourceforge.net/nsis/nsis-3.10-setup.exe?download"
+    set "NSIS_OUT=%TEMP%\nsis_setup.exe"
+
+    powershell -NoProfile -Command ^
+        "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
+         $wc = New-Object System.Net.WebClient; ^
+         $wc.Headers.Add('User-Agent','Mozilla/5.0'); ^
+         $wc.DownloadFile('https://github.com/nicehash/NiceHashQuickMiner/releases/download/v0.5.4.4/nsis-3.08-setup.exe', '%NSIS_OUT%')" 2>nul
+
+    :: Se ainda nao baixou, tenta URL alternativa
+    if not exist "%NSIS_OUT%" (
+        powershell -NoProfile -Command ^
+            "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
+             Invoke-WebRequest -Uri 'https://sourceforge.net/projects/nsis/files/NSIS%%203/3.10/nsis-3.10-setup.exe/download' ^
+             -OutFile '%NSIS_OUT%' -UserAgent 'Mozilla/5.0'" 2>nul
+    )
+
+    if exist "%NSIS_OUT%" (
+        echo [+] Instalando NSIS...
+        start /wait "" "%NSIS_OUT%" /S
+        timeout /t 8 /nobreak >nul
+    )
+
+    :: Verifica instalacao
+    if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+        set "MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe"
+        echo [OK] NSIS instalado.
+        goto :nsis_ok
+    )
+    if exist "C:\Program Files\NSIS\makensis.exe" (
+        set "MAKENSIS=C:\Program Files\NSIS\makensis.exe"
+        echo [OK] NSIS instalado.
+        goto :nsis_ok
+    )
+
+    :: Nao conseguiu instalar automaticamente
+    echo.
+    echo [ERRO] Nao foi possivel instalar o NSIS automaticamente.
+    echo.
+    echo Instale manualmente:
+    echo   1. Acesse: https://nsis.sourceforge.io/Download
+    echo   2. Baixe "nsis-3.xx-setup.exe"
+    echo   3. Instale normalmente
+    echo   4. Execute este script novamente
+    echo.
+    pause & exit /b 1
 )
+:nsis_ok
 echo [OK] NSIS: !MAKENSIS!
 
 :: ── STEP 1: Dependencias Python ──────────────────────────────────────
