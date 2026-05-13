@@ -73,7 +73,15 @@ class PxeServer:
         self.ip = interface_ip
         self.mask = subnet_mask
         self.work_dir = Path(work_dir) if work_dir else Path(".")
-        self.boot_dir = Path(__file__).parent.parent.parent / "resources" / "boot"
+
+        # Localiza resources/boot — funciona tanto como script quanto como .exe
+        import sys as _sys
+        if getattr(_sys, 'frozen', False):
+            _base = Path(_sys._MEIPASS)
+        else:
+            _base = Path(__file__).parent.parent.parent
+
+        self.boot_dir = _base / "app" / "resources" / "boot"
         self.is_running = False
         self._http_srv = None
         self._threads: list = []

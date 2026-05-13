@@ -8,8 +8,16 @@ from app.core.iso_service import IsoService, IsoError
 from app.core.dism_service import DismService
 
 # ── Pasta de drivers embutida no programa ────────────────────────────────── #
+# Quando empacotado pelo PyInstaller, usa sys._MEIPASS
+# Quando rodando como script, usa o caminho relativo normal
+import sys as _sys
+if getattr(_sys, 'frozen', False):
+    _APP_BASE = Path(_sys._MEIPASS)
+else:
+    _APP_BASE = Path(__file__).parent.parent
+
 # Primário: pasta dentro do próprio programa (app/resources/drivers)
-_RESOURCES_DRIVERS = Path(__file__).parent.parent / "resources" / "drivers"
+_RESOURCES_DRIVERS = _APP_BASE / "app" / "resources" / "drivers"
 
 # Fallback: Snappy Driver Installer externo (caso o usuário tenha instalado)
 _SDI_DRIVERS = Path(r"E:\snappidriver\SDI\Drivers")
