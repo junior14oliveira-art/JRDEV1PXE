@@ -11,6 +11,7 @@ from app.workers.dism_worker import (
 )
 from app.core.dism_service import DismService
 from app.core.iso_service import IsoService
+from app.workers.iso_worker import CorporateDriverWorker, CORPORATE_PACKS, _RESOURCES_DRIVERS
 
 class CustomizationView(QWidget):
     log_message = Signal(str)
@@ -87,6 +88,18 @@ class CustomizationView(QWidget):
         line.setFrameShape(QFrame.HLine)
         line.setFrameShadow(QFrame.Sunken)
         form.addRow(line)
+
+        # ── Pacote Corporativo ────────────────────────────────────── #
+        self._btn_corp_drivers = QPushButton("🏢  Injetar Pacote Corporativo (Dell/HP/Lenovo 8ª gen+)")
+        self._btn_corp_drivers.setObjectName("BtnPrimary")
+        self._btn_corp_drivers.clicked.connect(self._inject_corporate_pack)
+        form.addRow("Corporativo:", self._btn_corp_drivers)
+
+        # Separador Visual 2
+        line2 = QFrame()
+        line2.setFrameShape(QFrame.HLine)
+        line2.setFrameShadow(QFrame.Sunken)
+        form.addRow(line2)
 
         # ISO via Rede (HTTPDisk)
         self._txt_http_url = QLineEdit("http://192.168.0.21:8080/strelec.iso")
@@ -301,6 +314,106 @@ class CustomizationView(QWidget):
                 self.log_message.emit(f"Pacote {os.path.basename(file_path)} injetado.")
             else:
                 QMessageBox.warning(self, "Erro", "Falha ao injetar pacote. Verifique os logs.")
+
+    def _inject_corporate_pack(self):
+        """Diálogo para injetar pacote corporativo Dell/HP/Lenovo 8ª gen+."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox, QLabel
+
+        # ── Verificar quais pacotes estão disponíveis ─────────────────
+        available = {}
+        for cat, packs in CORPORATE_PACKS.items():
+            for filename, label in packs:
+                p = _RESOURCES_DRIVERS / filename
+                if p.exists():
+                    available[cat] = True
+                    break
+
+        # ── Diálogo de seleção ────────────────────────────────────────
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Pacote Corporativo — Dell/HP/Lenovo 8ª gen+")
+        dlg.setMinimumWidth(480)
+        layout = QVBoxLayout(dlg)
+
+        layout.addWidget(QLabel(
+            "<b>Selecione os pacotes a injetar no boot.wim:</b><br>"
+            "<small>Notebooks: Dell Latitude, HP EliteBook, Lenovo ThinkPad — Intel 8ª geração+</small>"
+        ))
+        layout.addSpacing(8)
+
+        CAT_INFO = {
+            "lan":     ("🔌 LAN (Rede Cabeada)",        "Intel I219-LM, Realtek, Others — OBRIGATÓRIO para PXE",  True),
+            "storage": ("💾 Mass Storage (NVMe/SATA)",   "Drivers de disco — necessário para ver o HD/SSD",        True),
+            "chipset": ("⚙️  Chipset Intel",              "PCH, USB, PCIe — recomendado para 8ª gen+",              False),
+            "wlan":    ("📶 Wi-Fi",                       "Intel AX201/9560/8265 — opcional para clonagem via PXE", False),
+        }
+
+        checkboxes: dict[str, QCheckBox] = {}
+        for cat, (title, desc, default) in CAT_INFO.items():
+            packs = CORPORATE_PACKS.get(cat, [])
+            # Verifica disponibilidade
+            has_any = any((_RESOURCES_DRIVERS / fn).exists() for fn, _ in packs)
+            cb = QCheckBox(f"{title}\n  {desc}")
+            cb.setChecked(default and has_any)
+            cb.setEnabled(has_any)
+            if not has_any:
+                cb.setText(cb.text() + "\n  ⚠️ Pacote não encontrado em resources/drivers")
+            checkboxes[cat] = cb
+            layout.addWidget(cb)
+
+        layout.addSpacing(8)
+        layout.addWidget(QLabel(
+            "<small>⚠️ O WIM <b>não</b> pode estar montado durante a injeção.<br>"
+            "Desmonte antes de continuar.</small>"
+        ))
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected = [cat for cat, cb in checkboxes.items() if cb.isChecked()]
+        if not selected:
+            return
+
+        # ── Verificar boot.wim ────────────────────────────────────────
+        if not self._boot_wim:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Erro", "Nenhum projeto carregado. Abra uma ISO primeiro.")
+            return
+
+        if self._is_mounted:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "WIM Montado",
+                "Desmonte o WIM antes de injetar drivers.\n"
+                "Clique em 'Salvar e Desmontar' primeiro.")
+            return
+
+        # ── Iniciar worker ────────────────────────────────────────────
+        self.log_message.emit(f"🏢 Iniciando pacote corporativo: {', '.join(selected)}")
+        self._btn_corp_drivers.setEnabled(False)
+        self._progress.show()
+        self._progress.setValue(0)
+
+        self._corp_worker = CorporateDriverWorker(self._boot_wim, selected)
+        self._corp_worker.log_message.connect(self.log_message)
+        self._corp_worker.progress.connect(self._progress.setValue)
+        self._corp_worker.finished.connect(self._on_corp_done)
+        self._corp_worker.start()
+
+    def _on_corp_done(self, success: bool, msg: str):
+        self._progress.hide()
+        self._btn_corp_drivers.setEnabled(True)
+        self.log_message.emit(f"{'✅' if success else '❌'} {msg}")
+        from PySide6.QtWidgets import QMessageBox
+        if success:
+            QMessageBox.information(self, "Pacote Corporativo", msg)
+        else:
+            QMessageBox.critical(self, "Erro", msg)
 
     def _inject_httpdisk(self):
         url = self._txt_http_url.text().strip()

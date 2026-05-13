@@ -7,10 +7,32 @@ from app.workers.base_worker import BaseWorker
 from app.core.iso_service import IsoService, IsoError
 from app.core.dism_service import DismService
 
-# Pacote de drivers LAN Intel do Snappy Driver Installer
-SDI_LAN_INTEL = Path(r"E:\snappidriver\SDI\Drivers\DP_LAN_Intel_26044.7z")
-SDI_LAN_OTHERS = Path(r"E:\snappidriver\SDI\Drivers\DP_LAN_Others_26044.7z")
-SDI_LAN_REALTEK = Path(r"E:\snappidriver\SDI\Drivers\DP_LAN_Realtek-NT_26044.7z")
+# ── Pasta de drivers embutida no programa ────────────────────────────────── #
+# Primário: pasta dentro do próprio programa (app/resources/drivers)
+_RESOURCES_DRIVERS = Path(__file__).parent.parent / "resources" / "drivers"
+
+# Fallback: Snappy Driver Installer externo (caso o usuário tenha instalado)
+_SDI_DRIVERS = Path(r"E:\snappidriver\SDI\Drivers")
+
+def _driver_pack(filename: str) -> Path:
+    """Retorna o caminho do pacote .7z — primeiro no programa, depois no SDI externo."""
+    internal = _RESOURCES_DRIVERS / filename
+    if internal.exists():
+        return internal
+    external = _SDI_DRIVERS / filename
+    if external.exists():
+        return external
+    return internal  # retorna o interno mesmo que não exista (erro será tratado depois)
+
+# Pacotes de drivers LAN
+SDI_LAN_INTEL   = _driver_pack("DP_LAN_Intel_26044.7z")
+SDI_LAN_OTHERS  = _driver_pack("DP_LAN_Others_26044.7z")
+SDI_LAN_REALTEK = _driver_pack("DP_LAN_Realtek-NT_26044.7z")
+
+# Pacotes corporativos (Dell/HP/Lenovo 8ª geração+)
+SDI_MASS_STORAGE = _driver_pack("DP_MassStorage_26044.7z")
+SDI_CHIPSET      = _driver_pack("DP_Chipset_26044.7z")
+SDI_WLAN         = _driver_pack("DP_WLAN-WiFi_26044.7z")
 
 # Pasta temporaria de extracao dos drivers
 DRIVER_EXTRACT_DIR = Path(r"C:\KIRO_Drivers_Temp")
@@ -231,3 +253,168 @@ class ExtractIsoWorker(BaseWorker):
             return None
 
         return DRIVER_EXTRACT_DIR
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Worker: Injeção de Pacote Corporativo
+# Notebooks Dell Latitude / HP EliteBook / Lenovo ThinkPad — 8ª geração+
+# Drivers: LAN Intel, LAN Others, LAN Realtek, MassStorage, Chipset, WLAN
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Mapeamento de pacotes por categoria
+CORPORATE_PACKS = {
+    "lan": [
+        ("DP_LAN_Intel_26044.7z",      "LAN Intel (I219-LM)"),
+        ("DP_LAN_Others_26044.7z",     "LAN Others (Broadcom/Marvell)"),
+        ("DP_LAN_Realtek-NT_26044.7z", "LAN Realtek"),
+    ],
+    "storage": [
+        ("DP_MassStorage_26044.7z",    "Mass Storage (NVMe/SATA)"),
+    ],
+    "chipset": [
+        ("DP_Chipset_26044.7z",        "Chipset Intel 8ª gen+"),
+    ],
+    "wlan": [
+        ("DP_WLAN-WiFi_26044.7z",      "Wi-Fi (Intel AX/9xxx/8xxx)"),
+    ],
+}
+
+
+class CorporateDriverWorker(BaseWorker):
+    """
+    Injeta pacote de drivers corporativos no boot.wim.
+    Cobre Dell Latitude, HP EliteBook, Lenovo ThinkPad — 8ª geração Intel+.
+
+    Parâmetros:
+        boot_wim   : caminho completo do boot.wim já extraído
+        categories : lista de categorias a injetar
+                     ex: ["lan", "storage", "chipset", "wlan"]
+    """
+
+    def __init__(self, boot_wim: str, categories: list[str], parent=None):
+        super().__init__(parent)
+        self.boot_wim = Path(boot_wim)
+        self.categories = categories
+
+    def run(self):
+        try:
+            self._log("═" * 55)
+            self._log("🏢 PACOTE CORPORATIVO — Dell/HP/Lenovo 8ª gen+")
+            self._log("═" * 55)
+
+            seven_zip = _find_7zip()
+            if not seven_zip:
+                self.finished.emit(False, "7-Zip não encontrado. Instale em C:\\Program Files\\7-Zip")
+                return
+
+            # ── Montar WIM ───────────────────────────────────────────
+            mount_dir = self.boot_wim.parent.parent / f"Mount_Corp_{self.boot_wim.parent.parent.name}"
+            dism = DismService()
+
+            self._log("🧹 Limpando mounts anteriores...")
+            subprocess.run(["dism", "/Cleanup-Wim"], capture_output=True, timeout=60)
+            if mount_dir.exists():
+                subprocess.run(f'rd /s /q "{mount_dir}"', shell=True,
+                               capture_output=True, timeout=30)
+
+            self._log(f"📂 Montando boot.wim...")
+            self.progress.emit(5)
+            result = dism.mount_wim(self.boot_wim, mount_dir, index=1, log_cb=self._log)
+            if isinstance(result, tuple):
+                ok, real_mount = result
+            else:
+                ok, real_mount = result, str(mount_dir)
+
+            if not ok:
+                self.finished.emit(False, "Falha ao montar boot.wim.")
+                return
+
+            real_mount_path = Path(real_mount)
+            self.progress.emit(10)
+
+            # ── Extrair e injetar por categoria ──────────────────────
+            total_cats = len(self.categories)
+            injected_total = 0
+            failed_packs = []
+
+            for cat_idx, cat in enumerate(self.categories):
+                packs = CORPORATE_PACKS.get(cat, [])
+                if not packs:
+                    continue
+
+                self._log(f"\n📦 Categoria: {cat.upper()}")
+                cat_extract_dir = DRIVER_EXTRACT_DIR / "corp" / cat
+                cat_extract_dir.mkdir(parents=True, exist_ok=True)
+
+                for filename, label in packs:
+                    pack_path = _driver_pack(filename)
+                    if not pack_path.exists():
+                        self._log(f"  ⚠️  {label} — pacote não encontrado: {pack_path.name}")
+                        failed_packs.append(label)
+                        continue
+
+                    self._log(f"  📥 Extraindo {label}...")
+                    dest = cat_extract_dir / filename.replace(".7z", "")
+                    dest.mkdir(parents=True, exist_ok=True)
+
+                    result = subprocess.run(
+                        [seven_zip, "x", str(pack_path), f"-o{dest}", "-y"],
+                        capture_output=True, text=True, timeout=300
+                    )
+                    if result.returncode != 0:
+                        self._log(f"  ❌ Erro ao extrair {label}")
+                        failed_packs.append(label)
+                        continue
+
+                    # Coleta pastas x64 com .inf
+                    inf_dirs: list[Path] = []
+                    for inf in dest.rglob("*.inf"):
+                        parent = inf.parent
+                        name_lower = str(parent).lower()
+                        if any(k in name_lower for k in ("x64", "amd64", "10x64", "ndis6")):
+                            if parent not in inf_dirs:
+                                inf_dirs.append(parent)
+                        elif not any(k in name_lower for k in ("x86", "xp", "ia64", "win7x86")):
+                            if parent not in inf_dirs:
+                                inf_dirs.append(parent)
+
+                    if not inf_dirs:
+                        inf_dirs = [dest]
+
+                    self._log(f"  💉 Injetando {label} ({len(inf_dirs)} pastas)...")
+                    ok_count = 0
+                    for d in inf_dirs:
+                        if dism.add_drivers(real_mount_path, d, recurse=False, log_cb=None):
+                            ok_count += 1
+                    injected_total += ok_count
+                    self._log(f"  ✅ {ok_count}/{len(inf_dirs)} drivers injetados")
+
+                # Progresso por categoria
+                prog = 10 + int((cat_idx + 1) / total_cats * 75)
+                self.progress.emit(prog)
+
+            # ── Salvar WIM ───────────────────────────────────────────
+            self._log("\n💾 Salvando boot.wim com drivers corporativos...")
+            self.progress.emit(88)
+            saved = dism.unmount_wim(real_mount_path, commit=True, log_cb=self._log)
+
+            # ── Limpeza ──────────────────────────────────────────────
+            try:
+                corp_dir = DRIVER_EXTRACT_DIR / "corp"
+                if corp_dir.exists():
+                    shutil.rmtree(str(corp_dir), ignore_errors=True)
+            except Exception:
+                pass
+
+            self.progress.emit(100)
+
+            if saved:
+                msg = f"✅ Pacote corporativo injetado! {injected_total} drivers."
+                if failed_packs:
+                    msg += f"\n⚠️ Não encontrados: {', '.join(failed_packs)}"
+                self.finished.emit(True, msg)
+            else:
+                self.finished.emit(False, "Erro ao salvar boot.wim.")
+
+        except Exception as e:
+            self.finished.emit(False, f"Erro inesperado: {e}")
