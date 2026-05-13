@@ -169,24 +169,32 @@ if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
 )
 
 echo [+] Baixando NSIS diretamente...
-powershell -NoProfile -Command ^
-    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ^
-     Invoke-WebRequest -Uri 'https://prdownloads.sourceforge.net/nsis/nsis-3.10-setup.exe' ^
-     -OutFile '%TEMP%\nsis_setup.exe' -UseBasicParsing" >nul 2>&1
+:: Fallback: instrucao manual clara
+echo.
+echo [AVISO] Download automatico do NSIS nao disponivel.
+echo.
+echo         Instale manualmente (1 minuto):
+echo         1. Abra o navegador
+echo         2. Acesse: https://nsis.sourceforge.io/Download
+echo         3. Clique em "nsis-3.xx-setup.exe"
+echo         4. Instale normalmente
+echo         5. Execute este script novamente
+echo.
+echo         OU use o winget (se disponivel):
+echo         winget install NSIS.NSIS
+echo.
+set /p "AGUARDA=Pressione ENTER apos instalar o NSIS para continuar..."
 
-if exist "%TEMP%\nsis_setup.exe" (
-    "%TEMP%\nsis_setup.exe" /S
-    timeout /t 8 /nobreak >nul
-    if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-        echo [OK] NSIS instalado.
-        echo NSIS instalado OK >> "%LOG%"
-    ) else (
-        echo [AVISO] NSIS nao instalado. Baixe em: https://nsis.sourceforge.io/Download
-    )
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+    echo [OK] NSIS encontrado apos instalacao manual.
+    echo NSIS instalado OK >> "%LOG%"
+) else (
+    echo [AVISO] NSIS ainda nao encontrado. Continuando sem ele.
+    echo         BUILD_INSTALLER.bat vai falhar sem o NSIS.
+)
 ) else (
     echo [AVISO] Falha ao baixar NSIS. Baixe em: https://nsis.sourceforge.io/Download
 )
-:nsis_ok
 
 :: ════════════════════════════════════════════════════════════════════
 echo.
