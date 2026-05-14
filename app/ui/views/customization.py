@@ -103,18 +103,6 @@ class CustomizationView(QWidget):
         line.setFrameShadow(QFrame.Sunken)
         form.addRow(line)
 
-        # ── Pacote Corporativo ────────────────────────────────────── #
-        self._btn_corp_drivers = QPushButton("🏢  Injetar Pacote Corporativo (Dell/HP/Lenovo 8ª gen+)")
-        self._btn_corp_drivers.setObjectName("BtnPrimary")
-        self._btn_corp_drivers.clicked.connect(self._inject_corporate_pack)
-        form.addRow("Corporativo:", self._btn_corp_drivers)
-
-        # Separador Visual 2
-        line2 = QFrame()
-        line2.setFrameShape(QFrame.HLine)
-        line2.setFrameShadow(QFrame.Sunken)
-        form.addRow(line2)
-
         # ISO via Rede (HTTPDisk)
         self._txt_http_url = QLineEdit("http://192.168.0.21:8080/strelec.iso")
         self._txt_http_url.setPlaceholderText("URL da ISO (ex: http://192.168.0.21:8080/strelec.iso)")
@@ -125,6 +113,20 @@ class CustomizationView(QWidget):
 
         root.addWidget(self._grp_tools)
         self._grp_tools.setEnabled(False)
+
+        # ── Pacote Corporativo (FORA do grp_tools — sempre habilitado) ── #
+        self._grp_corp = QGroupBox("🏢 Pacote Corporativo — Dell/HP/Lenovo 8ª gen+")
+        corp_layout = QVBoxLayout(self._grp_corp)
+        corp_layout.addWidget(QLabel(
+            "<small>Injeta drivers LAN, Storage, Chipset e Wi-Fi no boot.wim.<br>"
+            "O WIM deve estar <b>desmontado</b> para injetar.</small>"
+        ))
+        self._btn_corp_drivers = QPushButton("🏢  Injetar Pacote Corporativo (Dell/HP/Lenovo 8ª gen+)")
+        self._btn_corp_drivers.setObjectName("BtnPrimary")
+        self._btn_corp_drivers.setFixedHeight(44)
+        self._btn_corp_drivers.clicked.connect(self._inject_corporate_pack)
+        corp_layout.addWidget(self._btn_corp_drivers)
+        root.addWidget(self._grp_corp)
 
         # ── Progresso ─────────────────────────────────────────────────── #
         self._progress = QProgressBar()
@@ -368,10 +370,20 @@ class CustomizationView(QWidget):
             layout.addWidget(cb)
 
         layout.addSpacing(8)
-        layout.addWidget(QLabel(
-            "<small>⚠️ O WIM <b>não</b> pode estar montado durante a injeção.<br>"
-            "Desmonte antes de continuar.</small>"
-        ))
+
+        # Aviso vermelho se WIM estiver montado
+        if self._is_mounted:
+            lbl_aviso = QLabel(
+                "🔴 <b>WIM ESTÁ MONTADO — desmonte primeiro!</b><br>"
+                "Clique em 'Salvar e Desmontar' e depois abra este diálogo novamente."
+            )
+            lbl_aviso.setStyleSheet("color: #f38ba8; background: #313244; padding: 8px; border-radius: 4px;")
+            layout.addWidget(lbl_aviso)
+        else:
+            layout.addWidget(QLabel(
+                "<small>⚠️ O WIM <b>não</b> pode estar montado durante a injeção.<br>"
+                "Desmonte antes de continuar.</small>"
+            ))
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
