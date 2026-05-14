@@ -30,6 +30,10 @@ datas = [
     # Ferramentas embutidas (7-Zip + oscdimg) — sem dependencia externa
     (str(ROOT / 'app' / 'resources' / 'tools'),
      'app/resources/tools'),
+
+    # Imagens e assets da interface
+    (str(ROOT / 'app' / 'resources' / 'JRDEV1_Wallpaper_WinPE.jpg'),
+     'app/resources'),
 ]
 
 # ── Imports ocultos necessários ───────────────────────────────────────────────
