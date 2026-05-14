@@ -310,6 +310,9 @@ class DismService:
                     pass
                 
                 command = f"start \"\" \"X:\\Windows\\System32\\{exe_path.name}\""
+                # .bat precisa de cmd /c para rodar via start
+                if exe_path.suffix.lower() == '.bat':
+                    command = f"start \"\" cmd /c \"X:\\Windows\\System32\\{exe_path.name}\""
                 if command not in content:
                     with open(startnet_path, "a", encoding="utf-8", errors="ignore") as f:
                         f.write(f"\n{command}\n")
