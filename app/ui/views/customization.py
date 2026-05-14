@@ -11,7 +11,21 @@ from app.workers.dism_worker import (
 )
 from app.core.dism_service import DismService
 from app.core.iso_service import IsoService
-from app.workers.iso_worker import CorporateDriverWorker, CORPORATE_PACKS, _RESOURCES_DRIVERS
+from app.workers.iso_worker import CorporateDriverWorker, CORPORATE_PACKS
+
+
+def _get_resources_drivers():
+    """Retorna o caminho da pasta de drivers — funciona como script e como .exe."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    if getattr(_sys, 'frozen', False):
+        # Empacotado: recursos ficam em sys._MEIPASS/app/resources/drivers
+        base = _Path(_sys._MEIPASS)
+        return base / "app" / "resources" / "drivers"
+    else:
+        # Script: customization.py está em app/ui/views/
+        # .parent = views, .parent = ui, .parent = app, .parent = raiz
+        return _Path(__file__).parent.parent.parent / "resources" / "drivers"
 
 class CustomizationView(QWidget):
     log_message = Signal(str)
@@ -319,14 +333,8 @@ class CustomizationView(QWidget):
         """Diálogo para injetar pacote corporativo Dell/HP/Lenovo 8ª gen+."""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QDialogButtonBox, QLabel
 
-        # ── Verificar quais pacotes estão disponíveis ─────────────────
-        available = {}
-        for cat, packs in CORPORATE_PACKS.items():
-            for filename, label in packs:
-                p = _RESOURCES_DRIVERS / filename
-                if p.exists():
-                    available[cat] = True
-                    break
+        # Resolve caminho dos drivers em tempo de execução
+        resources_drivers = _get_resources_drivers()
 
         # ── Diálogo de seleção ────────────────────────────────────────
         dlg = QDialog(self)
@@ -350,13 +358,12 @@ class CustomizationView(QWidget):
         checkboxes: dict[str, QCheckBox] = {}
         for cat, (title, desc, default) in CAT_INFO.items():
             packs = CORPORATE_PACKS.get(cat, [])
-            # Verifica disponibilidade
-            has_any = any((_RESOURCES_DRIVERS / fn).exists() for fn, _ in packs)
+            has_any = any((resources_drivers / fn).exists() for fn, _ in packs)
             cb = QCheckBox(f"{title}\n  {desc}")
             cb.setChecked(default and has_any)
             cb.setEnabled(has_any)
             if not has_any:
-                cb.setText(cb.text() + "\n  ⚠️ Pacote não encontrado em resources/drivers")
+                cb.setText(cb.text() + f"\n  ⚠️ Pacote não encontrado em:\n  {resources_drivers}")
             checkboxes[cat] = cb
             layout.addWidget(cb)
 
