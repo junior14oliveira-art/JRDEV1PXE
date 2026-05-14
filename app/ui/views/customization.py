@@ -353,7 +353,7 @@ class CustomizationView(QWidget):
         CAT_INFO = {
             "lan":     ("🔌 LAN (Rede Cabeada)",        "Intel I219-LM, Realtek, Others — OBRIGATÓRIO para PXE",  True),
             "storage": ("💾 Mass Storage (NVMe/SATA)",   "Drivers de disco — necessário para ver o HD/SSD",        True),
-            "chipset": ("⚙️  Chipset Intel",              "PCH, USB, PCIe — recomendado para 8ª gen+",              False),
+            "chipset": ("⚙️  Chipset Intel",              "PCH, USB, PCIe — NÃO necessário para PXE/clonagem\n  ⚠️ REQUER ~3.5 GB livres no disco!",  False),
             "wlan":    ("📶 Wi-Fi",                       "Intel AX201/9560/8265 — opcional para clonagem via PXE", False),
         }
 
@@ -370,6 +370,30 @@ class CustomizationView(QWidget):
             layout.addWidget(cb)
 
         layout.addSpacing(8)
+
+        # Aviso de espaço em disco
+        import shutil as _shutil
+        try:
+            if self._boot_wim:
+                from pathlib import Path as _Path
+                drive = str(_Path(self._boot_wim).anchor)
+                _, _, free = _shutil.disk_usage(drive)
+                free_gb = free / (1024 ** 3)
+                chipset_cb = checkboxes.get("chipset")
+                if free_gb < 5.0:
+                    disk_color = "#f38ba8" if free_gb < 3.5 else "#fab387"
+                    lbl_disk = QLabel(
+                        f"💾 Espaço livre em {drive}: <b>{free_gb:.1f} GB</b><br>"
+                        f"<small>Chipset requer ~3.5 GB. LAN+Storage requerem ~2 GB.</small>"
+                    )
+                    lbl_disk.setStyleSheet(f"color: {disk_color}; background: #313244; padding: 6px; border-radius: 4px;")
+                    layout.addWidget(lbl_disk)
+                    if free_gb < 3.5 and chipset_cb:
+                        chipset_cb.setChecked(False)
+                        chipset_cb.setEnabled(False)
+                        chipset_cb.setText(chipset_cb.text() + f"\n  🔴 Desabilitado: apenas {free_gb:.1f} GB livres (mínimo 3.5 GB)")
+        except Exception:
+            pass
 
         # Aviso vermelho se WIM estiver montado
         if self._is_mounted:

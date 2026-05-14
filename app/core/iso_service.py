@@ -209,6 +209,34 @@ class IsoService:
         if not source_dir.is_dir():
             raise IsoError(f"Diretório fonte não encontrado: {source_dir}")
 
+        # ── FIX: Remover pastas Mount_* antes de gerar ISO ──────────────
+        # Pastas de montagem DISM dentro do workspace causam erro 5 no oscdimg
+        # (acesso negado a arquivos de sistema como RtBackup dentro do mount)
+        for mount_folder in source_dir.glob("Mount_*"):
+            if mount_folder.is_dir():
+                if log_cb:
+                    log_cb(f"⚠️  Pasta de montagem detectada: {mount_folder.name} — removendo antes de gerar ISO...")
+                logger.warning(f"Removendo pasta de montagem órfã: {mount_folder}")
+                try:
+                    # Tenta desmontar via DISM primeiro (caso ainda esteja montada)
+                    subprocess.run(
+                        ["dism", "/Unmount-Wim", f"/MountDir:{mount_folder}", "/Discard"],
+                        capture_output=True, timeout=60
+                    )
+                    subprocess.run(
+                        ["dism", "/Cleanup-Wim"],
+                        capture_output=True, timeout=60
+                    )
+                    import shutil as _shutil
+                    _shutil.rmtree(str(mount_folder), ignore_errors=True)
+                    if log_cb:
+                        log_cb(f"✅  Pasta {mount_folder.name} removida.")
+                except Exception as e:
+                    logger.warning(f"Não foi possível remover {mount_folder}: {e}")
+                    if log_cb:
+                        log_cb(f"⚠️  Não foi possível remover {mount_folder.name}: {e}")
+        # ────────────────────────────────────────────────────────────────
+
         etfsboot = source_dir / "boot" / "etfsboot.com"
         efisys = source_dir / "efi" / "microsoft" / "boot" / "efisys.bin"
 

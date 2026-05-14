@@ -318,6 +318,17 @@ class CorporateDriverWorker(BaseWorker):
         self.boot_wim = Path(boot_wim)
         self.categories = categories
 
+    # Espaço mínimo necessário por categoria (em GB)
+    _MIN_SPACE_GB = {
+        "lan":     0.5,
+        "storage": 1.0,
+        "chipset": 3.5,   # Chipset é o maior: ~945MB extraído + overhead do WIM
+        "wlan":    1.5,
+    }
+
+    # Aviso especial para categorias pesadas
+    _HEAVY_CATS = {"chipset"}
+
     def run(self):
         try:
             self._log("═" * 55)
@@ -328,6 +339,44 @@ class CorporateDriverWorker(BaseWorker):
             if not seven_zip:
                 self.finished.emit(False, "7-Zip não encontrado. Instale em C:\\Program Files\\7-Zip")
                 return
+
+            # ── Verificar espaço em disco ────────────────────────────
+            import shutil as _shutil
+            drive = str(self.boot_wim.anchor)  # ex: "E:\\"
+            try:
+                total, used, free = _shutil.disk_usage(drive)
+                free_gb = free / (1024 ** 3)
+                self._log(f"💾 Espaço livre em {drive}: {free_gb:.1f} GB")
+
+                # Calcula espaço mínimo total para as categorias selecionadas
+                min_needed = sum(self._MIN_SPACE_GB.get(c, 1.0) for c in self.categories)
+                # Adiciona 1 GB de margem de segurança
+                min_needed += 1.0
+
+                if free_gb < min_needed:
+                    msg = (
+                        f"❌ Espaço insuficiente no disco {drive}\n\n"
+                        f"Necessário: ~{min_needed:.1f} GB\n"
+                        f"Disponível: {free_gb:.1f} GB\n\n"
+                        f"Libere espaço no disco e tente novamente.\n"
+                        f"Dica: O pacote Chipset (~945 MB) requer pelo menos 3.5 GB livres."
+                    )
+                    self._log(msg)
+                    self.finished.emit(False, msg)
+                    return
+
+                # Aviso extra para Chipset (pesado)
+                if "chipset" in self.categories and free_gb < 5.0:
+                    self._log(
+                        f"⚠️  AVISO: O pacote Chipset é muito grande (~945 MB comprimido).\n"
+                        f"   Você tem {free_gb:.1f} GB livres — recomendado ter 5 GB+.\n"
+                        f"   Se falhar com 'Espaço insuficiente', remova o Chipset e tente sem ele.\n"
+                        f"   (O Chipset NÃO é necessário para boot PXE ou clonagem de disco.)"
+                    )
+
+            except Exception as e:
+                self._log(f"⚠️  Não foi possível verificar espaço em disco: {e}")
+            # ─────────────────────────────────────────────────────────
 
             # ── Montar WIM ───────────────────────────────────────────
             mount_dir = self.boot_wim.parent.parent / f"Mount_Corp_{self.boot_wim.parent.parent.name}"
