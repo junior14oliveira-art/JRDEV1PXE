@@ -34,6 +34,12 @@ from pathlib import Path
 # Este mesmo valor deve estar no license_manager.py
 _SECRET = b"KIRO_WINPE_2024_#@!_MUDE_ANTES_DE_DISTRIBUIR_#@!"
 
+# MACs isentos de licença (máquinas do desenvolvedor)
+# Adicione o MAC do seu notebook aqui — nunca precisará de licença
+_DEVELOPER_MACS = {
+    "00155DD3E415",   # Notebook do desenvolvedor JRDEV1
+}
+
 # Onde salvar a licença no PC do cliente
 _LICENSE_DIR  = Path(os.environ.get("APPDATA", "C:/Users/Default/AppData/Roaming")) / "WinPEStudio"
 _LICENSE_FILE = _LICENSE_DIR / "license.dat"
@@ -199,6 +205,19 @@ def check_license() -> tuple[str, dict]:
       status : LicenseStatus.*
       info   : dict com detalhes (expiry, days_left, machine_id, etc.)
     """
+    # ── Whitelist do desenvolvedor — sem licença necessária ──────── #
+    current_mac = get_machine_id()
+    if current_mac.upper() in _DEVELOPER_MACS:
+        from datetime import date
+        return LicenseStatus.VALID, {
+            "key":        "DEVELOPER",
+            "machine_id": current_mac,
+            "expiry":     "2099-12-31",
+            "days_left":  99999,
+            "activated":  "developer",
+        }
+    # ─────────────────────────────────────────────────────────────── #
+
     if not _LICENSE_FILE.exists():
         return LicenseStatus.NOT_FOUND, {}
 

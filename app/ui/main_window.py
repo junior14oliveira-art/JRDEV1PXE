@@ -19,6 +19,7 @@ from app.ui.views.pxe_view import PxeView
 from app.ui.views.download_view import DownloadView
 from app.ui.views.build_view import BuildView
 from app.ui.views.log_panel import LogPanelView
+from app.ui.views.about_view import AboutView
 from app.workers.iso_worker import ExtractIsoWorker
 
 
@@ -31,6 +32,7 @@ NAV_ITEMS = [
     ("📡", "Rede PXE",   "pxe"),
     ("⚙️", "Gerar ISO",  "build"),
     ("📋", "Logs",       "logs"),
+    ("ℹ️",  "Sobre",      "about"),
 ]
 WORK_DIR = Path("E:/WinPE_Studio_Workspace")
 
@@ -38,7 +40,7 @@ WORK_DIR = Path("E:/WinPE_Studio_Workspace")
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("WinPE Studio Pro v2.1")
+        self.setWindowTitle("JRDEV1 PXE — WinPE Studio Pro v2.1")
         self.resize(1100, 720)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(DARK_THEME_QSS)
@@ -91,6 +93,7 @@ class MainWindow(QMainWindow):
         self._v_pxe = PxeView()
         self._v_build = BuildView()
         self._v_logs = LogPanelView()
+        self._v_about = AboutView()
 
         self._stack.addWidget(self._v_dashboard)  # 0
         self._stack.addWidget(self._v_download)   # 1
@@ -99,6 +102,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._v_pxe)         # 4
         self._stack.addWidget(self._v_build)       # 5
         self._stack.addWidget(self._v_logs)        # 6
+        self._stack.addWidget(self._v_about)       # 7
 
         # Conectar sinais
         self._v_dashboard.iso_selected.connect(self._on_iso_selected)
@@ -128,15 +132,43 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(200)
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 20, 0, 20)
+        layout.setContentsMargins(0, 16, 0, 16)
         layout.setSpacing(4)
 
-        # Logo
-        logo = QLabel("WinPE\nStudio")
-        logo.setObjectName("SidebarLogo")
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(logo)
-        layout.addSpacing(16)
+        # ── Logo JRDEV1 ───────────────────────────────────────────── #
+        logo_frame = QFrame()
+        logo_frame.setStyleSheet("""
+            QFrame {
+                background-color: #091428;
+                border-bottom: 1px solid #1A3A6B;
+                padding: 8px 0;
+            }
+        """)
+        logo_layout = QVBoxLayout(logo_frame)
+        logo_layout.setContentsMargins(12, 8, 12, 12)
+        logo_layout.setSpacing(2)
+
+        # Ícone </> em destaque
+        lbl_icon = QLabel("</> 💡")
+        lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_icon.setStyleSheet("font-size: 22px; color: #2E6BE6; background: transparent; border: none;")
+        logo_layout.addWidget(lbl_icon)
+
+        lbl_brand = QLabel("JRDEV1 PXE")
+        lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_brand.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #FFFFFF; "
+            "letter-spacing: 2px; background: transparent; border: none;"
+        )
+        logo_layout.addWidget(lbl_brand)
+
+        lbl_tagline = QLabel("WinPE Studio Pro")
+        lbl_tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_tagline.setStyleSheet("font-size: 10px; color: #4A6FA5; background: transparent; border: none;")
+        logo_layout.addWidget(lbl_tagline)
+
+        layout.addWidget(logo_frame)
+        layout.addSpacing(8)
 
         # Botões de navegação
         self._nav_buttons: dict[str, QPushButton] = {}
@@ -231,8 +263,8 @@ class MainWindow(QMainWindow):
     #  Navegação                                                           #
     # ─────────────────────────────────────────────────────────────────── #
     _PAGE_INDEX = {
-        "dashboard": 0, "download": 1, "files": 2, "custom": 3, 
-        "pxe": 4, "build": 5, "logs": 6
+        "dashboard": 0, "download": 1, "files": 2, "custom": 3,
+        "pxe": 4, "build": 5, "logs": 6, "about": 7
     }
 
     def _navigate(self, page_id: str):
