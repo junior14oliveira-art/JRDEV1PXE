@@ -82,11 +82,11 @@ class AboutView(QWidget):
         banner_layout.setContentsMargins(0, 0, 0, 0)
         banner_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Logo sobre o banner
+        # Logo sobre o banner — usa JRDEV1.jpg (1024x1024, alta resolução)
         lbl_logo_img = QLabel()
         lbl_logo_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_px = _load_pixmap("JRDEV1_Wallpaper_WinPE.jpg", (140, 140))
-        # Usa a imagem como logo circular recortada
+        logo_px = _load_pixmap("JRDEV1.jpg", (140, 140))
+        # Recorta em círculo
         logo_size = 110
         logo_px_scaled = logo_px.scaled(
             logo_size, logo_size,
@@ -102,7 +102,6 @@ class AboutView(QWidget):
         path = QPainterPath()
         path.addEllipse(0, 0, logo_size, logo_size)
         cp.setClipPath(path)
-        # Centraliza o crop
         ox = (logo_px_scaled.width() - logo_size) // 2
         oy = (logo_px_scaled.height() - logo_size) // 2
         cp.drawPixmap(-ox, -oy, logo_px_scaled)

@@ -34,6 +34,8 @@ datas = [
     # Imagens e assets da interface
     (str(ROOT / 'app' / 'resources' / 'JRDEV1_Wallpaper_WinPE.jpg'),
      'app/resources'),
+    (str(ROOT / 'app' / 'resources' / 'JRDEV1.jpg'),
+     'app/resources'),
 ]
 
 # ── Imports ocultos necessários ───────────────────────────────────────────────
