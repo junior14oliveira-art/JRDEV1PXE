@@ -25,6 +25,10 @@ app/resources/boot/boot.sdi
 app/resources/boot/boot.ipxe
 app/resources/boot/autoexec.ipxe
 
+# Pacotes de drivers corporativos (arquivos grandes — distribuir separadamente)
+# Copie manualmente para app/resources/drivers/ antes de usar
+app/resources/drivers/*.7z
+
 # Workspace de trabalho (pastas temporárias de extração de ISO)
 WinPE_Studio_Workspace/
 
