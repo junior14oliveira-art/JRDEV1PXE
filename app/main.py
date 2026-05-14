@@ -31,6 +31,7 @@ BASE_PATH = _setup_base_path()
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from app.core.logger import setup_logger
+from app.core.license_service import check_license, LicenseStatus
 from app.controllers.main_controller import MainController
 
 
@@ -42,10 +43,41 @@ def main() -> None:
     app.setApplicationVersion("2.1.0")
     app.setOrganizationName("WinPEForge")
 
+    # ── Verificação de licença ────────────────────────────────────────── #
+    status, info = check_license()
+
+    if status != LicenseStatus.VALID:
+        # Mostra tela de ativação — bloqueia o programa principal
+        from app.ui.views.activation_view import ActivationView
+        activation = ActivationView(status=status, info=info)
+        activation.show()
+
+        # Quando ativar com sucesso, abre o programa principal
+        def _on_activated():
+            activation.close()
+            _launch_main(app)
+
+        activation.activated.connect(_on_activated)
+        sys.exit(app.exec())
+    else:
+        # Licença válida — avisa se estiver perto de expirar
+        days_left = info.get("days_left", 999)
+        if days_left <= 15:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                None,
+                "Licença Expirando",
+                f"⚠️ Sua licença expira em {days_left} dias.\n\n"
+                f"Renove para continuar usando o WinPE Studio."
+            )
+        _launch_main(app)
+        sys.exit(app.exec())
+
+
+def _launch_main(app):
+    """Inicia o programa principal após licença validada."""
     controller = MainController()
     controller.start()
-
-    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
