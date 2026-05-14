@@ -151,6 +151,15 @@ class MainWindow(QMainWindow):
 
         layout.addStretch()
 
+        # Status da licença
+        self._lbl_license = QLabel("🔑 ...")
+        self._lbl_license.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl_license.setWordWrap(True)
+        self._lbl_license.setStyleSheet("color: #6C7086; font-size: 11px; padding: 0 8px;")
+        layout.addWidget(self._lbl_license)
+
+        layout.addSpacing(4)
+
         # Status ISO carregada
         self._lbl_iso_name = QLabel("Nenhuma ISO")
         self._lbl_iso_name.setObjectName("SidebarInfo")
@@ -192,6 +201,31 @@ class MainWindow(QMainWindow):
         sb = QStatusBar()
         self.setStatusBar(sb)
         sb.showMessage("Pronto.")
+
+    def set_license_info(self, info: dict):
+        """Atualiza o label de licença na sidebar."""
+        days_left = info.get("days_left", 0)
+        expiry    = info.get("expiry", "")
+        try:
+            from datetime import date
+            exp_fmt = date.fromisoformat(expiry).strftime("%d/%m/%Y")
+        except Exception:
+            exp_fmt = expiry
+
+        if days_left <= 7:
+            color = "#F38BA8"   # vermelho
+            icon  = "🔴"
+        elif days_left <= 30:
+            color = "#FAB387"   # laranja
+            icon  = "⚠️"
+        else:
+            color = "#A6E3A1"   # verde
+            icon  = "✅"
+
+        self._lbl_license.setText(f"{icon} Licença: {days_left}d\nExpira {exp_fmt}")
+        self._lbl_license.setStyleSheet(
+            f"color: {color}; font-size: 11px; padding: 0 8px;"
+        )
 
     # ─────────────────────────────────────────────────────────────────── #
     #  Navegação                                                           #

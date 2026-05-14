@@ -55,10 +55,9 @@ def main() -> None:
         # Quando ativar com sucesso, abre o programa principal
         def _on_activated():
             activation.close()
-            _launch_main(app)
+            _launch_main(app, info=check_license()[1])
 
         activation.activated.connect(_on_activated)
-        sys.exit(app.exec())
     else:
         # Licença válida — avisa se estiver perto de expirar
         days_left = info.get("days_left", 999)
@@ -68,16 +67,23 @@ def main() -> None:
                 None,
                 "Licença Expirando",
                 f"⚠️ Sua licença expira em {days_left} dias.\n\n"
-                f"Renove para continuar usando o WinPE Studio."
+                "Entre em contato para renovar."
             )
-        _launch_main(app)
-        sys.exit(app.exec())
+        _launch_main(app, info=info)
+
+    sys.exit(app.exec())
 
 
-def _launch_main(app):
+def _launch_main(app, info: dict = None):
     """Inicia o programa principal após licença validada."""
     controller = MainController()
     controller.start()
+    # Passa info da licença para a janela principal mostrar na sidebar
+    if info:
+        try:
+            controller.view.set_license_info(info)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -102,42 +102,23 @@ def _verify_key_signature(key: str, expiry_date: date) -> bool:
 
 def extract_expiry_from_key(key: str) -> date | None:
     """
-    Tenta descobrir a data de expiração testando datas futuras.
-    Testa até 5 anos à frente, mês a mês.
+    Descobre a data de expiração embutida na chave testando datas futuras.
+    Testa dia a dia nos próximos 5 anos.
     Retorna a date se encontrar, None se a chave for inválida.
     """
     today = date.today()
-    # Testa todos os dias nos próximos 5 anos (1825 dias)
-    # Para performance, testa só o último dia de cada mês
-    for months_ahead in range(1, 61):  # até 5 anos
-        # Calcula o último dia do mês
-        year  = today.year + (today.month + months_ahead - 1) // 12
-        month = (today.month + months_ahead - 1) % 12 + 1
-        # Último dia do mês
-        if month == 12:
-            last_day = date(year, 12, 31)
-        else:
-            last_day = date(year, month + 1, 1) - timedelta(days=1)
 
-        if _verify_key_signature(key, last_day):
-            return last_day
+    # Testa datas futuras (até 5 anos = 1825 dias)
+    for days_ahead in range(0, 1826):
+        candidate = today + timedelta(days=days_ahead)
+        if _verify_key_signature(key, candidate):
+            return candidate
 
-    # Testa também datas já expiradas (últimos 2 anos) para detectar chaves vencidas
-    for months_back in range(1, 25):
-        year  = today.year + (today.month - months_back - 1) // 12
-        month = (today.month - months_back - 1) % 12 + 1
-        if month <= 0:
-            month += 12
-            year -= 1
-        try:
-            if month == 12:
-                last_day = date(year, 12, 31)
-            else:
-                last_day = date(year, month + 1, 1) - timedelta(days=1)
-            if _verify_key_signature(key, last_day):
-                return last_day
-        except Exception:
-            continue
+    # Testa datas já expiradas (últimos 2 anos) para detectar chaves vencidas
+    for days_back in range(1, 731):
+        candidate = today - timedelta(days=days_back)
+        if _verify_key_signature(key, candidate):
+            return candidate
 
     return None
 
