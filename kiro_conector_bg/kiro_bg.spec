@@ -28,19 +28,19 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='kiro_bg',
+    name='KIRODHCP',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,      # SEM janela — roda silencioso
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    uac_admin=False,    # WinPE ja roda como admin
-    onefile=True,       # Arquivo unico — facil de copiar para o WinPE
+    uac_admin=False,
+    onefile=True,
 )

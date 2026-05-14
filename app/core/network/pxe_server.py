@@ -434,15 +434,29 @@ class PxeServer:
         return opts
 
     def _get_ip_for_mac(self, mac: bytes) -> str:
-        """Aloca IP único por MAC. Pool começa em .200."""
+        """Aloca IP único por MAC usando hash do MAC como offset."""
         mac_str = mac.hex(':')
         if mac_str not in self._leases:
-            # Garante que cada MAC recebe um IP diferente
-            offset = 200 + len(self._leases)
-            if offset > 250:
-                offset = 200  # wrap
             base = ".".join(self.ip.split('.')[:-1])
-            self._leases[mac_str] = f"{base}.{offset}"
+
+            # Usa os últimos 2 bytes do MAC para gerar offset único
+            # Garante que o mesmo MAC sempre recebe o mesmo IP
+            # e MACs diferentes raramente colidem
+            mac_hash = (mac[4] ^ mac[5] ^ mac[3]) % 50  # 0-49
+            offset = 200 + mac_hash  # pool: .200 a .249
+
+            # Se já estiver em uso por outro MAC, incrementa
+            used_ips = set(self._leases.values())
+            candidate = f"{base}.{offset}"
+            attempts = 0
+            while candidate in used_ips and attempts < 50:
+                offset = 200 + ((offset - 200 + 1) % 50)
+                candidate = f"{base}.{offset}"
+                attempts += 1
+
+            self._leases[mac_str] = candidate
+            self._log(f"[DHCP] Lease: {mac_str} → {candidate}")
+        return self._leases[mac_str]
         return self._leases[mac_str]
 
     def _handle_dhcp(self, sock, data, addr, port):
@@ -460,7 +474,7 @@ class PxeServer:
 
         # Responder DHCP normal (wpeinit apos boot) E PXE
         # Sem esse bloco o WinPE fica em 169.254.x (APIPA) apos carregar
-        if msg_type == 1:  # DHCPDISCOVER
+        if msg_type == 1:  # DHCPDISCOVERtiv
             if is_pxe or is_ipxe:
                 self._log(f"[DHCP] <<< DISCOVER PXE de {mac_str} (iPXE={is_ipxe})")
             else:

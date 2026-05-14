@@ -1,5 +1,5 @@
 """
-KIRO Conector Background v2.0
+KIRODHCP v2.0
 ==============================
 Roda silencioso no WinPE ao iniciar.
 - Inicia servicos de rede (DHCP, Netman, NSI, NDIS)
@@ -25,9 +25,9 @@ RETRY_SECS = 10       # segundos entre tentativas
 
 # Log no desktop do WinPE
 if os.path.exists("X:\\Users\\Default\\Desktop"):
-    LOG_FILE = "X:\\Users\\Default\\Desktop\\KIRO_BG.log"
+    LOG_FILE = "X:\\Users\\Default\\Desktop\\KIRODHCP.log"
 else:
-    LOG_FILE = "C:\\KIRO_BG.log"
+    LOG_FILE = "C:\\KIRODHCP.log"
 
 # ── Log ───────────────────────────────────────────────────────────────────── #
 def log(msg: str):
@@ -174,7 +174,7 @@ def main() -> int:
         pass
 
     log("=" * 50)
-    log("KIRO Conector BG v2.0 iniciado")
+    log("KIRODHCP v2.0 iniciado")
     log(f"Servidor: {SERVER_IP} | Share: \\\\{SERVER_IP}\\{SHARE}")
     log(f"Drive: {DRIVE} | Max tentativas: {MAX_TRIES}")
     log("=" * 50)
