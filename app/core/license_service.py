@@ -43,11 +43,23 @@ _DEVELOPER_MACS = {
 }
 
 # Onde salvar a licença no PC do cliente
-# IMPORTANTE: Usa PROGRAMDATA (C:\ProgramData) em vez de APPDATA
-# porque o programa roda como Admin (UAC) e o APPDATA muda de perfil
-# ProgramData é acessível por todos os usuários/níveis de elevação
+# Usa PROGRAMDATA (C:\ProgramData) — acessível com UAC elevado
 _LICENSE_DIR  = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "WinPEStudio"
 _LICENSE_FILE = _LICENSE_DIR / "license.dat"
+
+# Caminho antigo (APPDATA) — para migração automática
+_LICENSE_FILE_OLD = Path(os.environ.get("APPDATA", "")) / "WinPEStudio" / "license.dat"
+
+
+def _migrate_license_if_needed():
+    """Migra license.dat do caminho antigo (APPDATA) para o novo (ProgramData)."""
+    if not _LICENSE_FILE.exists() and _LICENSE_FILE_OLD.exists():
+        try:
+            _LICENSE_DIR.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(str(_LICENSE_FILE_OLD), str(_LICENSE_FILE))
+        except Exception:
+            pass
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
@@ -259,12 +271,11 @@ def activate_license(key: str) -> tuple[bool, str]:
 def check_license() -> tuple[str, dict]:
     """
     Verifica a licença salva.
-
-    Retorna (status, info):
-      status : LicenseStatus.*
-      info   : dict com detalhes (expiry, days_left, machine_id, etc.)
     """
-    # ── Whitelist do desenvolvedor — sem licença necessária ──────── #
+    # Migra automaticamente do caminho antigo se necessário
+    _migrate_license_if_needed()
+
+    # ── Whitelist do desenvolvedor ───────────────────────────────── #
     current_mac = get_machine_id()
     if current_mac.upper() in _DEVELOPER_MACS:
         from datetime import date
