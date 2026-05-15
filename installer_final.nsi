@@ -28,6 +28,7 @@ ShowUnInstDetails show
 ; ── Includes ─────────────────────────────────────────────────────────────
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
 
 ; ── Interface ─────────────────────────────────────────────────────────────
 !define MUI_ABORTWARNING
@@ -145,8 +146,8 @@ Section "Uninstall"
     DeleteRegKey HKLM "${REG_KEY}"
 
     ; Remove dados do programa (licença) — pergunta antes
-    MessageBox MB_YESNO "Deseja remover também os dados de licença?$\r$\n(C:\ProgramData\WinPEStudio)" IDNO skip_data
-        RMDir /r "$PROGRAMDATA\WinPEStudio"
+    MessageBox MB_YESNO "Deseja remover também os dados de licença?" IDNO skip_data
+        RMDir /r "C:\ProgramData\WinPEStudio"
     skip_data:
 
 SectionEnd
