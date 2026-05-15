@@ -515,15 +515,23 @@ class PxeServer:
             client_id    = self._parse_options(data).get(61, b'')
 
             # Detecta HP pelo vendor class ou client identifier
-            is_hp = (b'HP' in vendor_class or b'Hewlett' in vendor_class or
-                     b'hp' in client_id.lower() if client_id else False)
+            # HP EliteBook envia: b'HP' ou b'Hewlett' no vendor class
+            # ou 'hp' no client identifier
+            vendor_lower = vendor_class.lower()
+            client_lower = client_id.lower() if client_id else b''
+            is_hp = (
+                b'hp' in vendor_lower or
+                b'hewlett' in vendor_lower or
+                b'compaq' in vendor_lower or
+                b'hp' in client_lower
+            )
 
             snponly = self.boot_dir / "snponly.efi"
             ipxe    = self.boot_dir / "ipxe.efi"
 
             if is_hp and snponly.exists():
                 boot_file = "snponly.efi"
-                self._log(f"[DHCP] HP detectado — usando snponly.efi")
+                self._log(f"[DHCP] HP detectado (vendor={vendor_class[:20]}) — usando snponly.efi")
             elif ipxe.exists():
                 boot_file = "ipxe.efi"
             elif snponly.exists():
