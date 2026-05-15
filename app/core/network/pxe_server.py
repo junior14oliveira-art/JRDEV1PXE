@@ -302,7 +302,7 @@ class PxeServer:
             use_oack = False
             oack_pkt = bytearray(b'\x00\x06')  # OACK Opcode
             if 'blksize' in options:
-                blksize = min(int(options['blksize']), 1468)
+                blksize = min(int(options['blksize']), 8192)  # até 8KB por bloco
                 oack_pkt += b'blksize\x00' + str(blksize).encode() + b'\x00'
                 use_oack = True
             if 'tsize' in options:
@@ -503,7 +503,26 @@ class PxeServer:
         is_pxe_client = is_ipxe or (
             self._parse_options(data).get(60, b'').startswith(b'PXEClient')
         )
-        boot_file = (f"http://{self.ip}:8080/boot.ipxe" if is_ipxe else "ipxe.efi") if is_pxe_client else ""
+
+        # HP EliteBook G6 e similares: usa snponly.efi (mais compatível que ipxe.efi)
+        # Detecta pelo vendor class identifier
+        vendor_class = self._parse_options(data).get(60, b'')
+        is_hp = b'HP' in vendor_class or b'Hewlett' in vendor_class
+
+        if is_ipxe:
+            boot_file = f"http://{self.ip}:8080/boot.ipxe"
+        elif is_pxe_client:
+            # snponly.efi funciona melhor em HP/Dell com Secure Boot
+            snponly = self.boot_dir / "snponly.efi"
+            ipxe    = self.boot_dir / "ipxe.efi"
+            if snponly.exists():
+                boot_file = "snponly.efi"
+            elif ipxe.exists():
+                boot_file = "ipxe.efi"
+            else:
+                boot_file = "ipxe.efi"
+        else:
+            boot_file = ""
 
         self._log(f"[DHCP] >>> {type_name}: IP={offered_ip}" + (f" boot={boot_file}" if boot_file else ""))
 
