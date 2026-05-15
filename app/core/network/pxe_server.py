@@ -504,21 +504,30 @@ class PxeServer:
             self._parse_options(data).get(60, b'').startswith(b'PXEClient')
         )
 
-        # HP EliteBook G6 e similares: usa snponly.efi (mais compatível que ipxe.efi)
-        # Detecta pelo vendor class identifier
-        vendor_class = self._parse_options(data).get(60, b'')
-        is_hp = b'HP' in vendor_class or b'Hewlett' in vendor_class
-
         if is_ipxe:
+            # iPXE já carregado — manda o script de boot
             boot_file = f"http://{self.ip}:8080/boot.ipxe"
         elif is_pxe_client:
-            # snponly.efi funciona melhor em HP/Dell com Secure Boot
+            # Primeira fase: escolhe o EFI correto por fabricante
+            # snponly.efi = usa driver SNP nativo da UEFI (melhor para HP)
+            # ipxe.efi    = iPXE completo (melhor para Dell/Lenovo)
+            vendor_class = self._parse_options(data).get(60, b'')
+            client_id    = self._parse_options(data).get(61, b'')
+
+            # Detecta HP pelo vendor class ou client identifier
+            is_hp = (b'HP' in vendor_class or b'Hewlett' in vendor_class or
+                     b'hp' in client_id.lower() if client_id else False)
+
             snponly = self.boot_dir / "snponly.efi"
             ipxe    = self.boot_dir / "ipxe.efi"
-            if snponly.exists():
+
+            if is_hp and snponly.exists():
                 boot_file = "snponly.efi"
+                self._log(f"[DHCP] HP detectado — usando snponly.efi")
             elif ipxe.exists():
                 boot_file = "ipxe.efi"
+            elif snponly.exists():
+                boot_file = "snponly.efi"
             else:
                 boot_file = "ipxe.efi"
         else:
