@@ -29,10 +29,19 @@ app/resources/boot/autoexec.ipxe
 # Copie manualmente para app/resources/drivers/ antes de usar
 app/resources/drivers/*.7z
 
+# Executáveis compilados (gerados pelo BUILD_TUDO.bat — não versionar)
+LicenseManager.exe
+LicenseManager.spec
+WinPE_Studio_Setup.exe
+WinPE_Studio_Setup2.exe
+*.iso
+INJETAR_LOG.txt
+
+# Specs gerados automaticamente pelo PyInstaller
+license_manager/LicenseManager.spec
+
 # Workspace de trabalho (pastas temporárias de extração de ISO)
 WinPE_Studio_Workspace/
-
-# IDEs
 .vscode/
 .idea/
 *.suo
