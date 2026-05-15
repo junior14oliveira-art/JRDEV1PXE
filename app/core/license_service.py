@@ -38,7 +38,8 @@ _SECRET = b"KIRO_WINPE_2024_#@!_MUDE_ANTES_DE_DISTRIBUIR_#@!"
 # Adicione o MAC do seu notebook aqui — nunca precisará de licença
 _DEVELOPER_MACS = {
     "00155DD3E415",   # Notebook JRDEV1 - Ethernet principal
-    "00155D4E59DB",   # Notebook JRDEV1 - Ethernet alternativa (Hyper-V)
+    "00155D4E59DB",   # Notebook JRDEV1 - vEthernet Hyper-V
+    "00D76D52C943",   # Notebook JRDEV1 - Wi-Fi 2
 }
 
 # Onde salvar a licença no PC do cliente
@@ -55,16 +56,18 @@ _LICENSE_FILE = _LICENSE_DIR / "license.dat"
 
 def get_machine_id() -> str:
     """
-    Retorna o MAC address da interface Ethernet principal (sem separadores).
-    Fallback: uuid.getnode().
+    Retorna o MAC address de qualquer adaptador de rede ativo.
+    Prioridade: Ethernet física > vEthernet > Wi-Fi > uuid.getnode()
     Sempre retorna 12 chars hex maiúsculos.
     """
     try:
+        # Tenta qualquer adaptador ativo (sem filtrar por MediaType)
         result = subprocess.run(
             [
                 "powershell", "-NoProfile", "-Command",
-                "Get-NetAdapter | Where-Object {$_.Status -eq 'Up' -and $_.MediaType -eq '802.3'} "
-                "| Sort-Object LinkSpeed -Descending | Select-Object -First 1 -ExpandProperty MacAddress"
+                "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} "
+                "| Sort-Object @{E={if($_.MediaType -eq '802.3'){0}else{1}}}, LinkSpeed -Descending "
+                "| Select-Object -First 1 -ExpandProperty MacAddress"
             ],
             capture_output=True, text=True, timeout=10
         )

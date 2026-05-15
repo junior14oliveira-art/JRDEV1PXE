@@ -120,7 +120,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='WinPE_Studio',
+    name='JRDEV1_PXE',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -143,5 +143,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='WinPE_Studio',    # Pasta de saída: dist/WinPE_Studio/
+    name='JRDEV1_PXE',    # Pasta de saída: dist/JRDEV1_PXE/
 )
