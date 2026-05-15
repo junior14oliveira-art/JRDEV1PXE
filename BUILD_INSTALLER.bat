@@ -18,12 +18,19 @@ if %errorlevel% neq 0 (
 )
 
 :: ── Python ───────────────────────────────────────────────────────────
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERRO] Python nao encontrado.
-    pause & exit /b 1
+:: Usa Python oficial em C:\Python313 (evita problema da DLL da Microsoft Store)
+set "PYTHON=C:\Python313\python.exe"
+if not exist "%PYTHON%" (
+    :: Fallback para Python do PATH
+    where python >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [ERRO] Python nao encontrado em C:\Python313 nem no PATH.
+        echo Instale o Python oficial em: https://www.python.org/downloads/
+        pause & exit /b 1
+    )
+    set "PYTHON=python"
 )
-python --version
+%PYTHON% --version
 
 :: ── NSIS ─────────────────────────────────────────────────────────────
 set "MAKENSIS=C:\Program Files (x86)\NSIS\makensis.exe"
@@ -41,8 +48,8 @@ echo [OK] NSIS: %MAKENSIS%
 :: ── STEP 1: Dependencias Python ──────────────────────────────────────
 echo.
 echo [1/4] Instalando dependencias Python...
-python -m pip install -r requirements.txt -q
-python -m pip install pyinstaller -q
+%PYTHON% -m pip install -r requirements.txt -q
+%PYTHON% -m pip install pyinstaller requests -q
 echo [OK] Dependencias OK.
 
 :: ── STEP 2: PyInstaller ──────────────────────────────────────────────
@@ -54,7 +61,7 @@ echo.
 if exist "dist\WinPE_Studio" rmdir /s /q "dist\WinPE_Studio"
 if exist "build\WinPE_Studio" rmdir /s /q "build\WinPE_Studio"
 
-python -m PyInstaller winpe_studio.spec --noconfirm --clean
+%PYTHON% -m PyInstaller winpe_studio.spec --noconfirm --clean
 if %errorlevel% neq 0 (
     echo.
     echo [ERRO] PyInstaller falhou!
