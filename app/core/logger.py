@@ -18,10 +18,19 @@ def setup_logger():
         "<level>{message}</level>"
     )
     
-    # Adiciona console (UTF-8 para evitar erros com emojis/acentos)
+    # Adiciona console apenas se stdout existir (não existe em .exe sem console)
     import io
-    utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    logger.add(utf8_stdout, format=log_format, level="DEBUG")
+    if sys.stdout is not None and hasattr(sys.stdout, 'buffer'):
+        try:
+            utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            logger.add(utf8_stdout, format=log_format, level="DEBUG")
+        except Exception:
+            pass
+    elif sys.stdout is not None:
+        try:
+            logger.add(sys.stdout, format=log_format, level="DEBUG")
+        except Exception:
+            pass
     
     # Adiciona arquivo de log (rotativo)
     log_file = Path("logs/winpe_studio.log")
