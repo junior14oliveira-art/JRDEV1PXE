@@ -4,8 +4,14 @@
 
 import os
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 ROOT = Path(SPECPATH)
+
+# ── Coleta completa de pacotes que o PyInstaller não detecta sozinho ─────────
+_req_datas, _req_binaries, _req_hiddenimports = collect_all('requests')
+_urllib3_datas, _urllib3_binaries, _urllib3_hiddenimports = collect_all('urllib3')
+_certifi_datas, _certifi_binaries, _certifi_hiddenimports = collect_all('certifi')
 
 # ── Dados a embutir no executável ────────────────────────────────────────────
 # Formato: (origem, destino_dentro_do_exe)
@@ -54,6 +60,17 @@ hiddenimports = [
     'win32api',
     'win32con',
     'win32security',
+    'requests',
+    'requests.adapters',
+    'requests.auth',
+    'requests.models',
+    'requests.sessions',
+    'urllib3',
+    'urllib3.util',
+    'urllib3.util.retry',
+    'certifi',
+    'charset_normalizer',
+    'idna',
     'socket',
     'threading',
     'struct',
@@ -82,9 +99,9 @@ hiddenimports = [
 a = Analysis(
     [str(ROOT / 'app' / 'main.py')],
     pathex=[str(ROOT)],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[] + _req_binaries + _urllib3_binaries + _certifi_binaries,
+    datas=datas + _req_datas + _urllib3_datas + _certifi_datas,
+    hiddenimports=hiddenimports + _req_hiddenimports + _urllib3_hiddenimports + _certifi_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
