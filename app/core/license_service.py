@@ -37,11 +37,15 @@ _SECRET = b"KIRO_WINPE_2024_#@!_MUDE_ANTES_DE_DISTRIBUIR_#@!"
 # MACs isentos de licença (máquinas do desenvolvedor)
 # Adicione o MAC do seu notebook aqui — nunca precisará de licença
 _DEVELOPER_MACS = {
-    "00155DD3E415",   # Notebook do desenvolvedor JRDEV1
+    "00155DD3E415",   # Notebook JRDEV1 - Ethernet principal
+    "00155D4E59DB",   # Notebook JRDEV1 - Ethernet alternativa (Hyper-V)
 }
 
 # Onde salvar a licença no PC do cliente
-_LICENSE_DIR  = Path(os.environ.get("APPDATA", "C:/Users/Default/AppData/Roaming")) / "WinPEStudio"
+# IMPORTANTE: Usa PROGRAMDATA (C:\ProgramData) em vez de APPDATA
+# porque o programa roda como Admin (UAC) e o APPDATA muda de perfil
+# ProgramData é acessível por todos os usuários/níveis de elevação
+_LICENSE_DIR  = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "WinPEStudio"
 _LICENSE_FILE = _LICENSE_DIR / "license.dat"
 
 
