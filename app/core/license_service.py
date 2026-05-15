@@ -56,15 +56,17 @@ _LICENSE_FILE = _LICENSE_DIR / "license.dat"
 
 def get_machine_id() -> str:
     """
-    Retorna o MAC address de qualquer adaptador de rede ativo.
-    Prioridade: Ethernet física > vEthernet > Wi-Fi > uuid.getnode()
+    Retorna um ID estável da máquina combinando:
+    1. MAC do primeiro adaptador ativo (qualquer tipo)
+    2. Fallback: número de série do volume C: (sempre disponível)
     Sempre retorna 12 chars hex maiúsculos.
     """
+    # Tenta MAC de qualquer adaptador ativo (Ethernet > vEthernet > Wi-Fi)
     try:
-        # Tenta qualquer adaptador ativo (sem filtrar por MediaType)
         result = subprocess.run(
             [
                 "powershell", "-NoProfile", "-Command",
+                # Ordena: Ethernet física (802.3) primeiro, depois outros
                 "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} "
                 "| Sort-Object @{E={if($_.MediaType -eq '802.3'){0}else{1}}}, LinkSpeed -Descending "
                 "| Select-Object -First 1 -ExpandProperty MacAddress"
@@ -76,11 +78,59 @@ def get_machine_id() -> str:
             return mac
     except Exception:
         pass
-    # Fallback
+
+    # Fallback 1: número de série do volume C: (estável mesmo sem rede)
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\").VolumeSerialNumber"],
+            capture_output=True, text=True, timeout=10
+        )
+        serial = result.stdout.strip().upper()
+        if serial and len(serial) >= 8:
+            # Padeia para 12 chars
+            return serial.ljust(12, '0')[:12]
+    except Exception:
+        pass
+
+    # Fallback 2: uuid.getnode() (MAC via Python)
     return f"{uuid.getnode():012X}"
 
 
-def get_machine_id_display() -> str:
+def _get_all_machine_ids() -> list[str]:
+    """Retorna TODOS os MACs ativos do PC para amarrar a licença."""
+    ids = set()
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} "
+             "| Select-Object -ExpandProperty MacAddress"],
+            capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.strip().splitlines():
+            mac = line.strip().replace("-", "").replace(":", "").upper()
+            if mac and len(mac) == 12:
+                ids.add(mac)
+    except Exception:
+        pass
+
+    # Sempre inclui o ID principal
+    ids.add(get_machine_id())
+
+    # Inclui número de série do volume C:
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\").VolumeSerialNumber"],
+            capture_output=True, text=True, timeout=10
+        )
+        serial = result.stdout.strip().upper()
+        if serial and len(serial) >= 8:
+            ids.add(serial.ljust(12, '0')[:12])
+    except Exception:
+        pass
+
+    return list(ids)
     """Retorna o MAC formatado: XX-XX-XX-XX-XX-XX"""
     mid = get_machine_id()
     return "-".join(mid[i:i+2] for i in range(0, 12, 2))
@@ -180,14 +230,16 @@ def activate_license(key: str) -> tuple[bool, str]:
             "Entre em contato para renovar."
         )
 
-    # Amarra ao MAC deste PC
-    machine_id = get_machine_id()
-    days_left  = (expiry - today).days
+    # Amarra a TODOS os MACs/IDs deste PC
+    machine_id  = get_machine_id()          # ID principal (para exibição)
+    all_ids     = _get_all_machine_ids()    # todos os IDs para validação
+    days_left   = (expiry - today).days
 
     _LICENSE_DIR.mkdir(parents=True, exist_ok=True)
     data = {
         "key":        key,
         "machine_id": machine_id,
+        "machine_ids": all_ids,             # lista completa
         "expiry":     expiry.isoformat(),
         "activated":  datetime.now().isoformat(),
     }
@@ -237,9 +289,13 @@ def check_license() -> tuple[str, dict]:
         expiry = date.fromisoformat(expiry_str)
         today  = date.today()
 
-        # 1. Verifica MAC
-        current_mac = get_machine_id()
-        if current_mac.upper() != machine_id.upper():
+        # 1. Verifica MAC — aceita qualquer ID salvo na ativação
+        current_mac  = get_machine_id()
+        current_ids  = set(i.upper() for i in _get_all_machine_ids())
+        saved_ids    = set(i.upper() for i in data.get("machine_ids", [machine_id]))
+        saved_ids.add(machine_id.upper())  # compatibilidade com licenças antigas
+
+        if not current_ids.intersection(saved_ids):
             return LicenseStatus.WRONG_MAC, {
                 "machine_id": machine_id,
                 "current":    current_mac,
