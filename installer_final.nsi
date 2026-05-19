@@ -87,18 +87,13 @@ Section "Programa Principal" SecMain
     ; Copia toda a pasta dist/JRDEV1_PXE/
     File /r "dist\JRDEV1_PXE\*.*"
 
-    ; Cria atalho no Desktop
-    CreateShortcut "$DESKTOP\JRDEV1 PXE.lnk" \
-        "$INSTDIR\${APP_EXE}" "" \
-        "$INSTDIR\${APP_EXE}" 0 \
-        SW_SHOWNORMAL "" "JRDEV1 PXE — WinPE Studio Pro"
+    ; Cria atalho no Desktop COM flag "Executar como Administrador" (UAC)
+    ; O CreateShortcut padrao do NSIS nao suporta UAC — usamos PowerShell
+    nsExec::ExecToLog 'powershell -NoProfile -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut(\"$DESKTOP\JRDEV1 PXE.lnk\"); $s.TargetPath=\"$INSTDIR\${APP_EXE}\"; $s.WorkingDirectory=\"$INSTDIR\"; $s.Description=\"JRDEV1 PXE — WinPE Studio Pro\"; $s.Save(); $bytes=[System.IO.File]::ReadAllBytes(\"$DESKTOP\JRDEV1 PXE.lnk\"); $bytes[21]=$bytes[21] -bor 0x20; [System.IO.File]::WriteAllBytes(\"$DESKTOP\JRDEV1 PXE.lnk\", $bytes)"'
 
-    ; Cria atalho no Menu Iniciar
+    ; Cria atalho no Menu Iniciar COM flag UAC
     CreateDirectory "$SMPROGRAMS\JRDEV1 PXE"
-    CreateShortcut "$SMPROGRAMS\JRDEV1 PXE\JRDEV1 PXE.lnk" \
-        "$INSTDIR\${APP_EXE}" "" \
-        "$INSTDIR\${APP_EXE}" 0 \
-        SW_SHOWNORMAL "" "JRDEV1 PXE — WinPE Studio Pro"
+    nsExec::ExecToLog 'powershell -NoProfile -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut(\"$SMPROGRAMS\JRDEV1 PXE\JRDEV1 PXE.lnk\"); $s.TargetPath=\"$INSTDIR\${APP_EXE}\"; $s.WorkingDirectory=\"$INSTDIR\"; $s.Description=\"JRDEV1 PXE — WinPE Studio Pro\"; $s.Save(); $bytes=[System.IO.File]::ReadAllBytes(\"$SMPROGRAMS\JRDEV1 PXE\JRDEV1 PXE.lnk\"); $bytes[21]=$bytes[21] -bor 0x20; [System.IO.File]::WriteAllBytes(\"$SMPROGRAMS\JRDEV1 PXE\JRDEV1 PXE.lnk\", $bytes)"'
     CreateShortcut "$SMPROGRAMS\JRDEV1 PXE\Desinstalar.lnk" \
         "$INSTDIR\Uninstall.exe"
 

@@ -35,8 +35,63 @@ from app.core.license_service import check_license, LicenseStatus
 from app.controllers.main_controller import MainController
 
 
+def _create_desktop_shortcut():
+    """
+    Cria atalho na Área de Trabalho com flag 'Executar como Administrador'.
+    Executado uma vez na primeira inicialização.
+    """
+    import subprocess
+    import sys
+    import base64
+    from pathlib import Path
+
+    try:
+        if not getattr(sys, 'frozen', False):
+            return  # Só cria atalho no .exe empacotado
+
+        exe_path = sys.executable
+        desktop = Path.home() / "Desktop"
+        shortcut_path = str(desktop / "JRDEV1 PXE.lnk")
+        work_dir = str(Path(exe_path).parent)
+
+        # Já existe — não recria
+        if Path(shortcut_path).exists():
+            return
+
+        # Script PowerShell usando variáveis para evitar problemas com aspas
+        ps_script = (
+            f'$e="{exe_path}"; '
+            f'$l="{shortcut_path}"; '
+            f'$w="{work_dir}"; '
+            '$s=New-Object -COM WScript.Shell; '
+            '$k=$s.CreateShortcut($l); '
+            '$k.TargetPath=$e; '
+            '$k.WorkingDirectory=$w; '
+            '$k.Description="JRDEV1 PXE - WinPE Studio Pro"; '
+            '$k.Save(); '
+            '$b=[System.IO.File]::ReadAllBytes($l); '
+            '$b[21]=$b[21] -bor 0x20; '
+            '[System.IO.File]::WriteAllBytes($l,$b)'
+        )
+
+        # Codifica em UTF-16 LE base64 (formato -EncodedCommand do PowerShell)
+        encoded = base64.b64encode(ps_script.encode('utf-16-le')).decode('ascii')
+
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-EncodedCommand", encoded],
+            capture_output=True, timeout=15
+        )
+
+    except Exception:
+        pass  # Silencioso — não crítico
+
+
 def main() -> None:
     setup_logger()
+
+    # Cria atalho na Área de Trabalho na primeira execução
+    _create_desktop_shortcut()
 
     app = QApplication(sys.argv)
     app.setApplicationName("WinPE Studio")
