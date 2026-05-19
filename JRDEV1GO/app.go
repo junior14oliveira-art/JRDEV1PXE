@@ -5,6 +5,8 @@ import (
 	"jrdev1pxe/internal/license"
 	"jrdev1pxe/internal/pxe"
 	"jrdev1pxe/internal/system"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct — exposto ao frontend via Wails
@@ -108,4 +110,19 @@ func (a *App) InjectDrivers(mountDir, driverDir string) system.CommandResult {
 
 func (a *App) GetWorkspaceDir() string {
 	return `E:\WinPE_Studio_Workspace`
+}
+
+// BrowseISO abre o diálogo nativo de seleção de arquivo
+func (a *App) BrowseISO() string {
+	result, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Selecionar ISO",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Imagens ISO (*.iso)", Pattern: "*.iso"},
+			{DisplayName: "Todos os arquivos (*.*)", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return result
 }

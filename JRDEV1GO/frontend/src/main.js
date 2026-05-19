@@ -1,9 +1,23 @@
 import './style.css';
-import { CheckLicense, ActivateLicense, GetLicenseInfo,
-         GetSystemInfo, GetNetworkInterfaces,
-         StartPXE, StopPXE, GetPXELogs, IsPXERunning,
-         ExtractISO, BuildISO, MountWIM, UnmountWIM, InjectDrivers,
-         GetWorkspaceDir } from '../wailsjs/go/main/App';
+
+// Wails runtime e bindings
+const go = window['go']?.['main']?.['App'] || {};
+
+const CheckLicense       = () => go['CheckLicense']?.() || Promise.resolve({code:'not_found'});
+const ActivateLicense    = (k) => go['ActivateLicense']?.(k) || Promise.resolve({success:false,message:'Erro'});
+const GetLicenseInfo     = () => go['GetLicenseInfo']?.() || Promise.resolve({});
+const GetSystemInfo      = () => go['GetSystemInfo']?.() || Promise.resolve({});
+const GetNetworkInterfaces = () => go['GetNetworkInterfaces']?.() || Promise.resolve([]);
+const StartPXE           = (ip,mask,wd) => go['StartPXE']?.(ip,mask,wd) || Promise.resolve({success:false});
+const StopPXE            = () => go['StopPXE']?.() || Promise.resolve();
+const GetPXELogs         = () => go['GetPXELogs']?.() || Promise.resolve([]);
+const IsPXERunning       = () => go['IsPXERunning']?.() || Promise.resolve(false);
+const ExtractISO         = (a,b) => go['ExtractISO']?.(a,b) || Promise.resolve({success:false});
+const BuildISO           = (a,b,c) => go['BuildISO']?.(a,b,c) || Promise.resolve({success:false});
+const MountWIM           = (a,b) => go['MountWIM']?.(a,b) || Promise.resolve({success:false});
+const UnmountWIM         = (a,b) => go['UnmountWIM']?.(a,b) || Promise.resolve({success:false});
+const InjectDrivers      = (a,b) => go['InjectDrivers']?.(a,b) || Promise.resolve({success:false});
+const GetWorkspaceDir    = () => go['GetWorkspaceDir']?.() || Promise.resolve('E:\\WinPE_Studio_Workspace');
 
 // ── Estado global ─────────────────────────────────────────────────────────
 const state = {
@@ -16,8 +30,17 @@ const state = {
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────
-window.addEventListener('load', async () => {
-  await checkLicense();
+// Aguarda o runtime Wails estar pronto antes de iniciar
+window.addEventListener('load', () => {
+  // Wails injeta window.go após o DOM carregar — aguarda até 3s
+  let attempts = 0;
+  const waitForWails = setInterval(() => {
+    attempts++;
+    if (window['go']?.['main']?.['App'] || attempts > 30) {
+      clearInterval(waitForWails);
+      checkLicense();
+    }
+  }, 100);
 });
 
 async function checkLicense() {
@@ -109,13 +132,15 @@ function buildLayout() {
       </div>
       <nav class="nav">
         ${navBtn('dashboard', '🏠', 'Início')}
+        ${navBtn('prepare',   '📀', 'Preparar ISO')}
         ${navBtn('pxe',       '📡', 'Rede PXE')}
-        ${navBtn('iso',       '💿', 'ISO / WIM')}
+        ${navBtn('iso',       '⚙️',  'Gerar ISO')}
         ${navBtn('custom',    '🎨', 'Customizar')}
         ${navBtn('logs',      '📋', 'Logs')}
         ${navBtn('about',     'ℹ️',  'Sobre')}
       </nav>
       <div class="sidebar-footer">
+        <div id="iso-loaded" style="font-size:11px;color:var(--text3);text-align:center;padding:4px 8px;margin-bottom:6px">Nenhuma ISO</div>
         <div class="license-badge" id="lic-badge">🔑 Carregando...</div>
         <button class="btn-exit" onclick="confirmExit()">⏻ Fechar</button>
       </div>
@@ -123,6 +148,7 @@ function buildLayout() {
     <div class="content">
       <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
       <div id="page-dashboard" class="page">${pageDashboard()}</div>
+      <div id="page-prepare"   class="page">${pagePrepare()}</div>
       <div id="page-pxe"       class="page">${pagePXE()}</div>
       <div id="page-iso"       class="page">${pageISO()}</div>
       <div id="page-custom"    class="page">${pageCustom()}</div>
@@ -148,8 +174,9 @@ window.navigate = function(page) {
     p.classList.toggle('active', p.id === 'page-' + page);
   });
   if (page === 'dashboard') loadDashboard();
-  if (page === 'pxe') loadPXEPage();
-  if (page === 'logs') startLogPolling();
+  if (page === 'prepare')   loadPreparePage();
+  if (page === 'pxe')       loadPXEPage();
+  if (page === 'logs')      startLogPolling();
   else stopLogPolling();
 };
 
@@ -167,10 +194,19 @@ function pageDashboard() {
     <div class="group">
       <div class="group-title">⚡ Ações Rápidas</div>
       <div class="group-body">
+        <div style="background:var(--card2);border:1px solid var(--accent);border-radius:8px;padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px">🚀 Fluxo Principal</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:12px">
+            1. Selecione uma ISO → 2. Extraia → 3. Inicie o PXE → 4. Dê boot nos notebooks
+          </div>
+          <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="navigate('prepare')">
+            📀 Preparar ISO para PXE →
+          </button>
+        </div>
         <div class="btn-row">
-          <button class="btn btn-primary" onclick="navigate('pxe')">📡 Iniciar Servidor PXE</button>
-          <button class="btn" onclick="navigate('iso')">💿 Extrair ISO</button>
-          <button class="btn" onclick="navigate('custom')">🎨 Customizar WinPE</button>
+          <button class="btn" onclick="navigate('pxe')">📡 Servidor PXE</button>
+          <button class="btn" onclick="navigate('custom')">🎨 Customizar WIM</button>
+          <button class="btn" onclick="navigate('iso')">⚙️ Gerar ISO</button>
         </div>
       </div>
     </div>`;
@@ -187,6 +223,236 @@ async function loadDashboard() {
   set('d-osc',   info.oscdimg    ? '✅ OK' : '❌ Não encontrado', !!info.oscdimg);
   set('d-space', info.free_space_gb.toFixed(1) + ' GB',
       info.free_space_gb > 10);
+}
+
+// ── Preparar ISO Page ─────────────────────────────────────────────────────
+function pagePrepare() {
+  return `
+    <div class="page-title">📀 Preparar ISO para PXE</div>
+    <div class="page-sub">Selecione uma ISO, extraia e prepare para boot via rede</div>
+
+    <div class="group">
+      <div class="group-title">1️⃣ Selecionar ISO</div>
+      <div class="group-body">
+        <div class="form-row">
+          <label class="form-label">Caminho da ISO (WinPE, Strelec, Hiren's, etc.)</label>
+          <div style="display:flex;gap:8px">
+            <input id="prep-iso" placeholder="E:\\imagem.iso" style="flex:1" />
+            <button class="btn" onclick="browseISO()">📂 Procurar</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Pasta de Destino (onde extrair)</label>
+          <div style="display:flex;gap:8px">
+            <input id="prep-dest" placeholder="E:\\WinPE_Studio_Workspace\\PROJETO" style="flex:1" />
+            <button class="btn" onclick="autoFillDest()">🔄 Auto</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">2️⃣ Extrair e Preparar</div>
+      <div class="group-body">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+          <div id="prep-status" style="flex:1;padding:10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text3)">
+            Aguardando seleção da ISO...
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-extract" onclick="doExtractForPXE()" disabled>
+            📦 Extrair ISO
+          </button>
+          <button class="btn" id="btn-inject-net" onclick="doInjectNetDrivers()" disabled>
+            🔌 Injetar Drivers de Rede
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">3️⃣ Iniciar PXE</div>
+      <div class="group-body">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:12px">
+          Após extrair a ISO, configure e inicie o servidor PXE para os notebooks darem boot.
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-go-pxe" onclick="goToPXEWithProject()" disabled>
+            📡 Ir para Rede PXE →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">📋 Log de Preparação</div>
+      <div class="group-body">
+        <div class="log-area" id="prep-log" style="height:200px"></div>
+      </div>
+    </div>`;
+}
+
+async function loadPreparePage() {
+  const wd = await GetWorkspaceDir();
+  const destEl = document.getElementById('prep-dest');
+  if (destEl && !destEl.value) {
+    const ts = new Date().toTimeString().slice(0,8).replace(/:/g,'');
+    destEl.value = wd + '\\PROJETO_' + ts;
+  }
+  // Habilita botão extrair se ISO já preenchida
+  checkPrepReady();
+}
+
+window.browseISO = async function() {
+  // Usa diálogo nativo do Wails
+  const iso = await (window['go']?.['main']?.['App']?.['BrowseISO']?.() || Promise.resolve(''));
+  if (iso) {
+    document.getElementById('prep-iso').value = iso;
+    const name = iso.split('\\').pop().replace(/\.iso$/i,'');
+    const ts = new Date().toTimeString().slice(0,8).replace(/:/g,'');
+    document.getElementById('prep-dest').value =
+      `E:\\WinPE_Studio_Workspace\\${name}_${ts}`;
+    checkPrepReady();
+  }
+};
+
+window.autoFillDest = async function() {
+  const iso = document.getElementById('prep-iso').value;
+  const wd  = await GetWorkspaceDir();
+  const name = iso ? iso.split('\\').pop().replace(/\.iso$/i,'') : 'PROJETO';
+  const ts = new Date().toTimeString().slice(0,8).replace(/:/g,'');
+  document.getElementById('prep-dest').value = `${wd}\\${name}_${ts}`;
+  checkPrepReady();
+};
+
+function checkPrepReady() {
+  const iso  = document.getElementById('prep-iso')?.value;
+  const dest = document.getElementById('prep-dest')?.value;
+  const btn  = document.getElementById('btn-extract');
+  if (btn) btn.disabled = !(iso && dest);
+}
+
+function prepLog(msg, type = '') {
+  const el = document.getElementById('prep-log');
+  if (!el) return;
+  const ts = new Date().toTimeString().slice(0,8);
+  const cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : '';
+  el.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span>\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+window.doExtractForPXE = async function() {
+  const iso  = document.getElementById('prep-iso').value.trim();
+  const dest = document.getElementById('prep-dest').value.trim();
+  if (!iso || !dest) return;
+
+  const btn = document.getElementById('btn-extract');
+  btn.disabled = true;
+  btn.textContent = '⏳ Extraindo...';
+
+  setProgress(10);
+  prepLog(`Extraindo: ${iso}`);
+  prepLog(`Destino: ${dest}`);
+
+  document.getElementById('prep-status').innerHTML =
+    '<span style="color:var(--orange)">⏳ Extraindo ISO... aguarde (pode demorar alguns minutos)</span>';
+
+  const r = await ExtractISO(iso, dest);
+  setProgress(70);
+
+  if (r.success) {
+    state.workDir = dest;
+    prepLog('✅ ISO extraída com sucesso!', 'ok');
+    prepLog(`Projeto: ${dest}`, 'ok');
+
+    document.getElementById('prep-status').innerHTML =
+      `<span style="color:var(--green)">✅ ISO extraída em: ${dest}</span>`;
+
+    // Atualiza sidebar
+    const isoName = iso.split('\\').pop();
+    const sideEl = document.getElementById('iso-loaded');
+    if (sideEl) sideEl.textContent = '📀 ' + isoName;
+
+    // Habilita próximos passos
+    document.getElementById('btn-inject-net').disabled = false;
+    document.getElementById('btn-go-pxe').disabled = false;
+
+    // Preenche campos das outras páginas
+    const wimPath = dest + '\\sources\\boot.wim';
+    const mountDir = dest + '_Mount';
+    const wdEl = document.getElementById('pxe-workdir');
+    if (wdEl) wdEl.value = dest;
+    const wimEl = document.getElementById('wim-path');
+    if (wimEl) wimEl.value = wimPath;
+    const mountEl = document.getElementById('wim-mount');
+    if (mountEl) mountEl.value = mountDir;
+    const buildSrc = document.getElementById('build-src');
+    if (buildSrc) buildSrc.value = dest;
+
+    prepLog('💡 Próximo passo: Injetar Drivers de Rede ou ir direto para PXE', 'warn');
+  } else {
+    prepLog('❌ Erro na extração: ' + r.error, 'err');
+    document.getElementById('prep-status').innerHTML =
+      `<span style="color:var(--red)">❌ Erro: ${r.error}</span>`;
+  }
+
+  setProgress(0);
+  btn.disabled = false;
+  btn.textContent = '📦 Extrair ISO';
+};
+
+window.doInjectNetDrivers = async function() {
+  if (!state.workDir) {
+    prepLog('❌ Extraia a ISO primeiro', 'err');
+    return;
+  }
+  const wimPath  = state.workDir + '\\sources\\boot.wim';
+  const mountDir = state.workDir + '_Mount_Net';
+
+  prepLog('🔌 Iniciando injeção de drivers de rede...', 'warn');
+  setProgress(20);
+
+  // Monta WIM
+  prepLog(`Montando: ${wimPath}`);
+  const mnt = await MountWIM(wimPath, mountDir);
+  if (!mnt.success) {
+    prepLog('❌ Falha ao montar WIM: ' + mnt.error, 'err');
+    setProgress(0);
+    return;
+  }
+  prepLog('✅ WIM montado', 'ok');
+  setProgress(50);
+
+  // Injeta drivers LAN da pasta resources
+  const driverDir = 'drivers'; // relativo ao exe
+  prepLog('💉 Injetando drivers LAN...');
+  const inj = await InjectDrivers(mountDir, driverDir);
+  setProgress(80);
+
+  // Desmonta e salva
+  prepLog('💾 Salvando WIM...');
+  const unm = await UnmountWIM(mountDir, true);
+  setProgress(100);
+
+  if (unm.success) {
+    prepLog('✅ Drivers de rede injetados com sucesso!', 'ok');
+  } else {
+    prepLog('⚠️ Aviso ao desmontar: ' + unm.error, 'warn');
+  }
+  setProgress(0);
+};
+
+window.goToPXEWithProject = function() {
+  if (state.workDir) {
+    const wdEl = document.getElementById('pxe-workdir');
+    if (wdEl) wdEl.value = state.workDir;
+  }
+  navigate('pxe');
+};
+
+function setProgress(pct) {
+  const el = document.getElementById('progress-fill');
+  if (el) el.style.width = pct + '%';
 }
 
 // ── PXE Page ──────────────────────────────────────────────────────────────
@@ -505,5 +771,6 @@ window.confirmExit = function() {
     if (!confirm('O servidor PXE está ativo. Deseja fechar mesmo assim?')) return;
     StopPXE();
   }
-  window.runtime?.Quit();
+  window['go']?.['main']?.['App'] && window.runtime?.Quit();
+  window.close();
 };
