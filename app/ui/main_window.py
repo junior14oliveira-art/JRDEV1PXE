@@ -20,19 +20,21 @@ from app.ui.views.download_view import DownloadView
 from app.ui.views.build_view import BuildView
 from app.ui.views.log_panel import LogPanelView
 from app.ui.views.about_view import AboutView
+from app.ui.views.unattend_view import UnattendView
 from app.workers.iso_worker import ExtractIsoWorker
 
 
 # ── Constantes ──────────────────────────────────────────────────────────── #
 NAV_ITEMS = [
-    ("🏠", "Início",    "dashboard"),
-    ("📥", "Baixar",    "download"),
-    ("📁", "Arquivos",  "files"),
-    ("🎨", "Customizar", "custom"),
-    ("📡", "Rede PXE",   "pxe"),
-    ("⚙️", "Gerar ISO",  "build"),
-    ("📋", "Logs",       "logs"),
-    ("ℹ️",  "Sobre",      "about"),
+    ("🏠", "Início",       "dashboard"),
+    ("📥", "Baixar",       "download"),
+    ("📁", "Arquivos",     "files"),
+    ("🎨", "Customizar",   "custom"),
+    ("📡", "Rede PXE",     "pxe"),
+    ("⚙️", "Gerar ISO",    "build"),
+    ("⚡", "Instalação Auto", "unattend"),
+    ("📋", "Logs",         "logs"),
+    ("ℹ️",  "Sobre",        "about"),
 ]
 WORK_DIR = Path("E:/WinPE_Studio_Workspace")
 
@@ -92,6 +94,7 @@ class MainWindow(QMainWindow):
         self._v_custom = CustomizationView()
         self._v_pxe = PxeView()
         self._v_build = BuildView()
+        self._v_unattend = UnattendView()
         self._v_logs = LogPanelView()
         self._v_about = AboutView()
 
@@ -101,8 +104,9 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._v_custom)      # 3
         self._stack.addWidget(self._v_pxe)         # 4
         self._stack.addWidget(self._v_build)       # 5
-        self._stack.addWidget(self._v_logs)        # 6
-        self._stack.addWidget(self._v_about)       # 7
+        self._stack.addWidget(self._v_unattend)    # 6
+        self._stack.addWidget(self._v_logs)        # 7
+        self._stack.addWidget(self._v_about)       # 8
 
         # Conectar sinais
         self._v_dashboard.iso_selected.connect(self._on_iso_selected)
@@ -114,6 +118,7 @@ class MainWindow(QMainWindow):
         self._v_custom.wim_mounted.connect(self._on_wim_mounted)
         self._v_pxe.log_message.connect(self._v_logs.append)
         self._v_build.log_message.connect(self._v_logs.append)
+        self._v_unattend.log_message.connect(self._v_logs.append)
 
     def _detect_env(self):
         """Detecta o ambiente e passa para as views."""
@@ -264,7 +269,7 @@ class MainWindow(QMainWindow):
     # ─────────────────────────────────────────────────────────────────── #
     _PAGE_INDEX = {
         "dashboard": 0, "download": 1, "files": 2, "custom": 3,
-        "pxe": 4, "build": 5, "logs": 6, "about": 7
+        "pxe": 4, "build": 5, "unattend": 6, "logs": 7, "about": 8
     }
 
     def _navigate(self, page_id: str):
@@ -322,6 +327,7 @@ class MainWindow(QMainWindow):
             self._v_custom.set_project(self._work_dir)
             self._v_build.set_source(self._work_dir)
             self._v_pxe.set_project(self._work_dir)
+            self._v_unattend.set_project(self._work_dir)
             self._v_logs.append(f"✅ Projeto carregado: {self._work_dir}")
 
             # Pergunta se quer injetar drivers de rede
