@@ -123,9 +123,9 @@ class MainWindow(QMainWindow):
     def _detect_env(self):
         """Detecta o ambiente e passa para as views."""
         status = detect_system()
-        # Passa o caminho do oscdimg para a view de build
         if status.oscdimg_found:
             self._v_build.set_oscdimg_path(status.oscdimg_path)
+            self._v_unattend.set_oscdimg_path(status.oscdimg_path)
         
         # Atualiza o dashboard com o status real (opcional, dashboard já chama internamente, 
         # mas centralizar aqui é melhor)
