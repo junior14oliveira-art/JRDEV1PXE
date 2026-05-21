@@ -15,5 +15,19 @@
     "productVersion": "2.1.0",
     "copyright": "2024-2026 JRDEV1",
     "comments": "WinPE Studio Pro"
-  }
+  },
+  "windows": {
+    "webviewIsTransparent": false,
+    "windowIsTranslucent": false,
+    "disableWindowIcon": false,
+    "isZoomControlEnabled": false,
+    "enableSwipeGestures": false,
+    "theme": "dark",
+    "messages": {
+      "webviewNotInstalled": "WebView2 nao encontrado. Instale em: https://developer.microsoft.com/microsoft-edge/webview2/"
+    }
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleargs": ""
 }

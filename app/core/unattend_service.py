@@ -12,16 +12,17 @@ class UnattendConfig:
     """Configurações para a instalação automática."""
     def __init__(self):
         self.username: str = "usuario"
-        self.password: str = ""                    # vazio = sem senha
-        self.computer_name: str = "*"              # * = gerado automaticamente
-        self.timezone: str = "E. South America Standard Time"  # Brasília
+        self.password: str = ""
+        self.computer_name: str = "*"
+        self.timezone: str = "E. South America Standard Time"
         self.language: str = "pt-BR"
-        self.disk_index: int = 0                   # disco 0 = primeiro disco
-        self.partition_style: str = "GPT"          # GPT (UEFI) ou MBR (BIOS)
-        self.windows_edition: str = "Professional" # edição do Windows
-        self.skip_oobe: bool = True                # pula configuração inicial
-        self.auto_logon: bool = True               # login automático na 1ª vez
+        self.disk_index: int = 0
+        self.partition_style: str = "GPT"
+        self.windows_edition: str = "Professional"
+        self.skip_oobe: bool = True
+        self.auto_logon: bool = True
         self.auto_logon_count: int = 1
+        self.include_storage_drivers: bool = True  # injeta drivers NVMe/SATA na ISO
 
 
 def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bool:
@@ -90,6 +91,13 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
                language="neutral"
                versionScope="nonSxS"
                xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+
+      <!-- Drivers de armazenamento (NVMe/SATA) — resolve "driver de mídia ausente" -->
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1">
+          <Path>$WinPEDriver$\\storage</Path>
+        </PathAndCredentials>
+      </DriverPaths>
 
       <DiskConfiguration>
         <WillShowUI>Never</WillShowUI>
@@ -236,17 +244,87 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
 def inject_autounattend(iso_work_dir: str | Path, config: UnattendConfig) -> tuple[bool, str]:
     """
     Injeta o autounattend.xml na raiz da pasta de trabalho da ISO.
-    O arquivo deve estar na RAIZ da ISO para o Windows Setup encontrá-lo.
+    Também copia drivers de storage para $WinPEDriver$\\storage se disponíveis.
     """
+    import shutil
+    import sys
+
     work_dir = Path(iso_work_dir)
     if not work_dir.is_dir():
         return False, f"Pasta não encontrada: {work_dir}"
 
+    # Gera o autounattend.xml
     output = work_dir / "autounattend.xml"
     ok = generate_autounattend(config, output)
-    if ok:
-        return True, str(output)
-    return False, "Falha ao gerar autounattend.xml"
+    if not ok:
+        return False, "Falha ao gerar autounattend.xml"
+
+    # Copia drivers de Mass Storage para dentro da ISO
+    # O XML aponta para $WinPEDriver$/storage — pasta relativa à raiz da ISO
+    if config.include_storage_drivers:
+        _copy_storage_drivers(work_dir)
+
+    return True, str(output)
+
+
+def _copy_storage_drivers(iso_root: Path):
+    """
+    Copia drivers de Mass Storage (NVMe/SATA) para dentro da ISO.
+    O instalador do Windows carrega automaticamente de $WinPEDriver$/storage.
+    """
+    import shutil
+    import sys
+
+    # Localiza a pasta de drivers do programa
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).parent.parent
+
+    drivers_dir = base / "app" / "resources" / "drivers"
+    storage_pack = drivers_dir / "DP_MassStorage_26044.7z"
+
+    dest_dir = iso_root / "$WinPEDriver$" / "storage"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    if not storage_pack.exists():
+        logger.warning(f"[UNATTEND] Pacote de storage não encontrado: {storage_pack}")
+        logger.warning("[UNATTEND] O instalador pode pedir driver manualmente.")
+        return
+
+    # Extrai o pacote .7z para a pasta de drivers da ISO
+    import subprocess
+    seven_zip_candidates = [
+        base / "app" / "resources" / "tools" / "7z.exe",
+        Path(r"C:\Program Files\7-Zip\7z.exe"),
+        Path(r"C:\Program Files (x86)\7-Zip\7z.exe"),
+    ]
+    seven_zip = None
+    for c in seven_zip_candidates:
+        if c.exists():
+            seven_zip = str(c)
+            break
+
+    if not seven_zip:
+        logger.warning("[UNATTEND] 7-Zip não encontrado — drivers de storage não copiados")
+        return
+
+    logger.info(f"[UNATTEND] Extraindo drivers de storage para: {dest_dir}")
+    result = subprocess.run(
+        [seven_zip, "x", str(storage_pack), f"-o{dest_dir}", "-y",
+         # Extrai apenas pastas x64 para não poluir com drivers x86
+         r"*/x64/*", r"*/amd64/*", r"*/Win10x64/*"],
+        capture_output=True, text=True, timeout=120
+    )
+    if result.returncode == 0:
+        logger.info("[UNATTEND] Drivers de storage copiados para a ISO")
+    else:
+        # Fallback: extrai tudo
+        subprocess.run(
+            [seven_zip, "x", str(storage_pack), f"-o{dest_dir}", "-y"],
+            capture_output=True, timeout=120
+        )
+        logger.info("[UNATTEND] Drivers de storage copiados (todos os arquivos)")
 
 
 # ── Particionamento GPT (UEFI) ────────────────────────────────────────────── #
