@@ -386,7 +386,7 @@ class MainWindow(QMainWindow):
         self._v_pxe.set_project(work_dir)
         self._navigate("pxe")
         self._v_logs.append(f"🚀 Instalação PXE — projeto: {work_dir}")
-        self._v_logs.append("📡 Configure a interface de rede e clique em Iniciar PXE.")
+
         # Passa o IP do servidor para a view de instalação PXE
         try:
             from app.core.network.pxe_server import get_network_interfaces
@@ -395,6 +395,15 @@ class MainWindow(QMainWindow):
                 self._v_pxe_install.set_server_ip(ifaces[0]['ip'])
         except Exception:
             pass
+
+        # Inicia o servidor PXE automaticamente
+        try:
+            if not self._v_pxe._is_running:
+                self._v_pxe._start_server()
+                self._v_logs.append("📡 Servidor PXE iniciado automaticamente!")
+        except Exception as e:
+            self._v_logs.append(f"⚠️ Não foi possível iniciar PXE automaticamente: {e}")
+            self._v_logs.append("💡 Clique em 'INICIAR SERVIDOR' na aba Rede PXE.")
         self._navigate("files")
     @Slot(bool)
     def _on_wim_mounted(self, mounted: bool):

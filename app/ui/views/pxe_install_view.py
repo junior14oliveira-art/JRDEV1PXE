@@ -302,6 +302,11 @@ class PxeInstallView(QWidget):
 
     def _start_pxe(self):
         if not self._prepared_dir:
+            QMessageBox.warning(
+                self, "Atenção",
+                "Prepare a ISO primeiro!\n\n"
+                "Clique em '⚙️ Preparar ISO para PXE' antes de iniciar o servidor."
+            )
             return
         self.request_start_pxe.emit(self._prepared_dir)
         self._lbl_status.setText(
