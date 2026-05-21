@@ -125,7 +125,9 @@ class MainWindow(QMainWindow):
         status = detect_system()
         if status.oscdimg_found:
             self._v_build.set_oscdimg_path(status.oscdimg_path)
-            self._v_unattend.set_oscdimg_path(status.oscdimg_path)
+            # Proteção: só chama se o método existir (compatibilidade)
+            if hasattr(self._v_unattend, 'set_oscdimg_path'):
+                self._v_unattend.set_oscdimg_path(status.oscdimg_path)
         
         # Atualiza o dashboard com o status real (opcional, dashboard já chama internamente, 
         # mas centralizar aqui é melhor)
