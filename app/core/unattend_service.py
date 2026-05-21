@@ -92,7 +92,7 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
                xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
 
       <DiskConfiguration>
-        <WillShowUI>OnError</WillShowUI>
+        <WillShowUI>Never</WillShowUI>
         <Disk wcm:action="add">
           <DiskID>{config.disk_index}</DiskID>
           <WillWipeDisk>true</WillWipeDisk>
@@ -102,7 +102,7 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
 
       <ImageInstall>
         <OSImage>
-          <WillShowUI>OnError</WillShowUI>
+          <WillShowUI>Never</WillShowUI>
           <InstallFrom>
             <MetaData wcm:action="add">
               <Key>/IMAGE/EDITIONID</Key>
@@ -120,6 +120,9 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
         <AcceptEula>true</AcceptEula>
         <FullName>{config.username}</FullName>
         <Organization>JRDEV1</Organization>
+        <ProductKey>
+          <WillShowUI>Never</WillShowUI>
+        </ProductKey>
       </UserData>
 
     </component>
@@ -149,6 +152,16 @@ def generate_autounattend(config: UnattendConfig, output_path: str | Path) -> bo
       <UILanguage>pt-BR</UILanguage>
       <UserLocale>pt-BR</UserLocale>
     </component>
+
+    <!-- Desativa Windows Update durante instalação -->
+    <component name="Microsoft-Windows-Security-SPP-UX"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS">
+      <SkipAutoActivation>true</SkipAutoActivation>
+    </component>
+
   </settings>
 
   <!-- ═══════════════════════════════════════════════════════════════
