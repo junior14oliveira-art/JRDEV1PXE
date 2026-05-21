@@ -21,20 +21,22 @@ from app.ui.views.build_view import BuildView
 from app.ui.views.log_panel import LogPanelView
 from app.ui.views.about_view import AboutView
 from app.ui.views.unattend_view import UnattendView
+from app.ui.views.pxe_install_view import PxeInstallView
 from app.workers.iso_worker import ExtractIsoWorker
 
 
 # ── Constantes ──────────────────────────────────────────────────────────── #
 NAV_ITEMS = [
-    ("🏠", "Início",       "dashboard"),
-    ("📥", "Baixar",       "download"),
-    ("📁", "Arquivos",     "files"),
-    ("🎨", "Customizar",   "custom"),
-    ("📡", "Rede PXE",     "pxe"),
-    ("⚙️", "Gerar ISO",    "build"),
+    ("🏠", "Início",          "dashboard"),
+    ("📥", "Baixar",          "download"),
+    ("📁", "Arquivos",        "files"),
+    ("🎨", "Customizar",      "custom"),
+    ("📡", "Rede PXE",        "pxe"),
+    ("⚙️", "Gerar ISO",       "build"),
     ("⚡", "Instalação Auto", "unattend"),
-    ("📋", "Logs",         "logs"),
-    ("ℹ️",  "Sobre",        "about"),
+    ("�", "Instalação PXE",  "pxe_install"),
+    ("�📋", "Logs",            "logs"),
+    ("ℹ️",  "Sobre",           "about"),
 ]
 WORK_DIR = Path("E:/WinPE_Studio_Workspace")
 
@@ -95,18 +97,20 @@ class MainWindow(QMainWindow):
         self._v_pxe = PxeView()
         self._v_build = BuildView()
         self._v_unattend = UnattendView()
+        self._v_pxe_install = PxeInstallView()
         self._v_logs = LogPanelView()
         self._v_about = AboutView()
 
-        self._stack.addWidget(self._v_dashboard)  # 0
-        self._stack.addWidget(self._v_download)   # 1
-        self._stack.addWidget(self._v_files)       # 2
-        self._stack.addWidget(self._v_custom)      # 3
-        self._stack.addWidget(self._v_pxe)         # 4
-        self._stack.addWidget(self._v_build)       # 5
-        self._stack.addWidget(self._v_unattend)    # 6
-        self._stack.addWidget(self._v_logs)        # 7
-        self._stack.addWidget(self._v_about)       # 8
+        self._stack.addWidget(self._v_dashboard)    # 0
+        self._stack.addWidget(self._v_download)     # 1
+        self._stack.addWidget(self._v_files)         # 2
+        self._stack.addWidget(self._v_custom)        # 3
+        self._stack.addWidget(self._v_pxe)           # 4
+        self._stack.addWidget(self._v_build)         # 5
+        self._stack.addWidget(self._v_unattend)      # 6
+        self._stack.addWidget(self._v_pxe_install)   # 7
+        self._stack.addWidget(self._v_logs)          # 8
+        self._stack.addWidget(self._v_about)         # 9
 
         # Conectar sinais
         self._v_dashboard.iso_selected.connect(self._on_iso_selected)
@@ -119,6 +123,8 @@ class MainWindow(QMainWindow):
         self._v_pxe.log_message.connect(self._v_logs.append)
         self._v_build.log_message.connect(self._v_logs.append)
         self._v_unattend.log_message.connect(self._v_logs.append)
+        self._v_pxe_install.log_message.connect(self._v_logs.append)
+        self._v_pxe_install.request_start_pxe.connect(self._on_pxe_install_start)
 
     def _detect_env(self):
         """Detecta o ambiente e passa para as views."""
@@ -271,7 +277,8 @@ class MainWindow(QMainWindow):
     # ─────────────────────────────────────────────────────────────────── #
     _PAGE_INDEX = {
         "dashboard": 0, "download": 1, "files": 2, "custom": 3,
-        "pxe": 4, "build": 5, "unattend": 6, "logs": 7, "about": 8
+        "pxe": 4, "build": 5, "unattend": 6, "pxe_install": 7,
+        "logs": 8, "about": 9
     }
 
     def _navigate(self, page_id: str):
@@ -371,6 +378,23 @@ class MainWindow(QMainWindow):
         self._v_pxe.setEnabled(True)
         self._v_logs.append(f"{'✅' if success else '⚠️'} {msg}")
         self._v_logs.append("🚀 Pode iniciar o servidor PXE agora.")
+
+    @Slot(str)
+    def _on_pxe_install_start(self, work_dir: str):
+        """Chamado pela aba Instalação PXE para iniciar o servidor com a ISO preparada."""
+        self._work_dir = work_dir
+        self._v_pxe.set_project(work_dir)
+        self._navigate("pxe")
+        self._v_logs.append(f"🚀 Instalação PXE — projeto: {work_dir}")
+        self._v_logs.append("📡 Configure a interface de rede e clique em Iniciar PXE.")
+        # Passa o IP do servidor para a view de instalação PXE
+        try:
+            from app.core.network.pxe_server import get_network_interfaces
+            ifaces = get_network_interfaces()
+            if ifaces:
+                self._v_pxe_install.set_server_ip(ifaces[0]['ip'])
+        except Exception:
+            pass
         self._navigate("files")
     @Slot(bool)
     def _on_wim_mounted(self, mounted: bool):
