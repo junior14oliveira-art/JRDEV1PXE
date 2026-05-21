@@ -109,6 +109,12 @@ def get_machine_id() -> str:
     return f"{uuid.getnode():012X}"
 
 
+def get_machine_id_display() -> str:
+    """Retorna o MAC formatado: XX-XX-XX-XX-XX-XX"""
+    mid = get_machine_id()
+    return "-".join(mid[i:i+2] for i in range(0, 12, 2))
+
+
 def _get_all_machine_ids() -> list[str]:
     """Retorna TODOS os MACs ativos do PC para amarrar a licença."""
     ids = set()
@@ -143,9 +149,6 @@ def _get_all_machine_ids() -> list[str]:
         pass
 
     return list(ids)
-    """Retorna o MAC formatado: XX-XX-XX-XX-XX-XX"""
-    mid = get_machine_id()
-    return "-".join(mid[i:i+2] for i in range(0, 12, 2))
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
