@@ -96,11 +96,12 @@ class PrepareInstallWorker(BaseWorker):
 
     def _inject_storage_drivers(self, work_dir: Path):
         """
-        Copia drivers NVMe/SATA para dentro da ISO do Windows.
-        O Windows Setup verifica automaticamente sources/drivers durante a instalacao.
+        Copia drivers NVMe/SATA para sources/drivers na raiz (sem subpastas).
+        O Windows Setup precisa encontrar os .inf diretamente, nao em subpastas.
         """
         import sys
         import subprocess
+        import shutil
 
         if getattr(sys, 'frozen', False):
             base = Path(sys._MEIPASS)
@@ -109,10 +110,9 @@ class PrepareInstallWorker(BaseWorker):
 
         storage_pack = base / "app" / "resources" / "drivers" / "DP_MassStorage_26044.7z"
         if not storage_pack.exists():
-            # Tenta no SDI externo
             storage_pack = Path(r"E:\snappidriver\SDI\Drivers\DP_MassStorage_26044.7z")
         if not storage_pack.exists():
-            self._log(f"⚠️ Pacote storage nao encontrado")
+            self._log("⚠️ Pacote storage nao encontrado")
             return
 
         seven_zip_candidates = [
@@ -125,34 +125,41 @@ class PrepareInstallWorker(BaseWorker):
             self._log("⚠️ 7-Zip nao encontrado")
             return
 
-        # sources\drivers — local que o Windows Setup verifica automaticamente
-        # para drivers de storage durante a instalacao
-        dest_sources = work_dir / "sources" / "drivers"
-        dest_sources.mkdir(parents=True, exist_ok=True)
-
-        # $WinPEDriver$ — carregado pelo WinPE antes do setup
-        dest_winpe = work_dir / "$WinPEDriver$" / "storage"
-        dest_winpe.mkdir(parents=True, exist_ok=True)
+        # Extrai para pasta temporaria
+        tmp_dir = work_dir / "_drivers_tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
 
         self._log("💾 Extraindo drivers NVMe/SATA Intel RST...")
+        subprocess.run(
+            [seven_zip, "x", str(storage_pack), f"-o{tmp_dir}", "-y",
+             "Intel/FORCED/10x64/*"],
+            capture_output=True, timeout=180
+        )
 
-        # Extrai apenas drivers x64 para Windows 10/11
-        for dest in [dest_sources, dest_winpe]:
-            result = subprocess.run(
-                [seven_zip, "x", str(storage_pack),
-                 f"-o{dest}", "-y",
-                 "Intel/FORCED/10x64/*",   # RST moderno (18-20.x) para Win10/11
-                 "Intel/FORCED/NTx64/*"],   # RST legado
-                capture_output=True, timeout=120
-            )
-            if result.returncode != 0:
-                # Fallback: extrai tudo
-                subprocess.run(
-                    [seven_zip, "x", str(storage_pack), f"-o{dest}", "-y"],
-                    capture_output=True, timeout=120
-                )
+        # Copia todos os .inf e .sys para sources\drivers (raiz plana)
+        # O Windows Setup precisa encontrar os drivers sem subpastas
+        dest_flat = work_dir / "sources" / "drivers"
+        dest_flat.mkdir(parents=True, exist_ok=True)
 
-        self._log(f"✅ Drivers NVMe/SATA copiados para sources/drivers e $WinPEDriver$")
+        copied = 0
+        for ext in ["*.inf", "*.sys", "*.cat", "*.dll"]:
+            for f in tmp_dir.rglob(ext):
+                try:
+                    # Usa nome unico para evitar conflitos
+                    dest_file = dest_flat / f.name
+                    if not dest_file.exists():
+                        shutil.copy2(str(f), str(dest_file))
+                        copied += 1
+                except Exception:
+                    pass
+
+        # Limpa pasta temporaria
+        try:
+            shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        except Exception:
+            pass
+
+        self._log(f"✅ {copied} arquivos de driver copiados para sources/drivers")
 
 
 class PxeInstallView(QWidget):
