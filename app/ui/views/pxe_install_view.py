@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QGroupBox, QFormLayout,
-    QMessageBox, QFileDialog, QProgressBar, QFrame,
+    QMessageBox, QFileDialog, QProgressBar, QFrame, QPlainTextEdit,
 )
 from app.core.unattend_service import UnattendConfig, inject_autounattend
 from app.workers.base_worker import BaseWorker
@@ -105,6 +105,13 @@ class PxeInstallView(QWidget):
     def set_server_ip(self, ip: str):
         if ip:
             self._server_ip = ip
+
+    def _append_log(self, msg: str):
+        """Adiciona mensagem ao painel de log local."""
+        if hasattr(self, '_log_panel'):
+            self._log_panel.appendPlainText(msg)
+            sb = self._log_panel.verticalScrollBar()
+            sb.setValue(sb.maximum())
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -199,6 +206,30 @@ class PxeInstallView(QWidget):
         self._progress.setValue(0)
         self._progress.hide()
         root.addWidget(self._progress)
+
+        # ── Log ───────────────────────────────────────────────────────── #
+        grp_log = QGroupBox("📋 Log")
+        log_layout = QVBoxLayout(grp_log)
+        self._log_panel = QPlainTextEdit()
+        self._log_panel.setReadOnly(True)
+        self._log_panel.setMaximumBlockCount(300)
+        self._log_panel.setFixedHeight(160)
+        self._log_panel.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background-color: #060E1F;"
+            "  color: #5DADE2;"
+            "  font-family: 'Consolas', monospace;"
+            "  font-size: 11px;"
+            "  border: 1px solid #1A3A6B;"
+            "  border-radius: 4px;"
+            "  padding: 6px;"
+            "}"
+        )
+        log_layout.addWidget(self._log_panel)
+        root.addWidget(grp_log)
+
+        # Conecta log_message ao painel local também
+        self.log_message.connect(self._append_log)
 
         # ── Botões ────────────────────────────────────────────────────── #
         btn_row = QHBoxLayout()
