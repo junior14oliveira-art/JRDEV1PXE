@@ -53,6 +53,10 @@ class PrepareInstallWorker(BaseWorker):
 
             self._log("⚡ Injetando script de autostart no WinPE...")
             self._inject_autostart(work)
+
+            self._log("💾 Injetando drivers NVMe/SATA (resolve 'disco nao encontrado')...")
+            self._inject_storage_drivers(work)
+
             self.progress.emit(100)
 
             self._log("✅ Preparação concluída! Inicie o servidor PXE.")
@@ -89,6 +93,48 @@ class PrepareInstallWorker(BaseWorker):
             self._log(f"✅ startnet.cmd injetado")
         else:
             self._log("⚠️ Pasta sources nao encontrada")
+
+    def _inject_storage_drivers(self, work_dir: Path):
+        """
+        Copia drivers NVMe/SATA para dentro da ISO do Windows.
+        Coloca em $WinPEDriver$\\storage E em sources\\drivers para garantir.
+        """
+        import sys
+        import subprocess
+
+        if getattr(sys, 'frozen', False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).parent.parent.parent
+
+        storage_pack = base / "app" / "resources" / "drivers" / "DP_MassStorage_26044.7z"
+        if not storage_pack.exists():
+            self._log(f"⚠️ Pacote storage nao encontrado: {storage_pack}")
+            return
+
+        # Destinos: $WinPEDriver$\storage E sources\$OEM$\$$\Drivers\storage
+        dest1 = work_dir / "$WinPEDriver$" / "storage"
+        dest2 = work_dir / "sources" / "$OEM$" / "$$" / "Drivers" / "storage"
+        dest1.mkdir(parents=True, exist_ok=True)
+        dest2.mkdir(parents=True, exist_ok=True)
+
+        seven_zip_candidates = [
+            base / "app" / "resources" / "tools" / "7z.exe",
+            Path(r"C:\Program Files\7-Zip\7z.exe"),
+            Path(r"C:\Program Files (x86)\7-Zip\7z.exe"),
+        ]
+        seven_zip = next((str(c) for c in seven_zip_candidates if c.exists()), None)
+        if not seven_zip:
+            self._log("⚠️ 7-Zip nao encontrado — drivers storage nao copiados")
+            return
+
+        self._log("💾 Copiando drivers NVMe/SATA para a ISO...")
+        for dest in [dest1, dest2]:
+            subprocess.run(
+                [seven_zip, "x", str(storage_pack), f"-o{dest}", "-y"],
+                capture_output=True, timeout=120
+            )
+        self._log("✅ Drivers NVMe/SATA copiados")
 
 
 class PxeInstallView(QWidget):
